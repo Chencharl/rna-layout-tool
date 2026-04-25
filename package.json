@@ -1,0 +1,22 @@
+{
+  "name": "rna-layout-tool",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SVG-based RNA figure editor for tRNA cloverleaf maps and publication-ready RNA layouts.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}

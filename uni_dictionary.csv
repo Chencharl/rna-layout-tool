@@ -1,0 +1,45 @@
+﻿name,mass,note
+C,305.0413,
+U,306.0253,
+A,329.0525,
+G,345.0474,
+D,308.04095,
+c,319.05694,mC
+u,320.04095,mU
+a,343.06817,mA
+g,359.06308,mG
+4,322.00246,4-thiouridine
+*,443.10284,2-methylthio-N6-isopentenyladenosine
+X,407.07298,3-(3-amino-3-carboxypropyl)uridine
++,397.11512,i6A
+x,949.30298,"3-(3-amino-3-carboxypropyl)uridine, dyed"
+f,1034.261709,4-thiouridine dyed with LD555
+R,373.07873,2mG
+y,212.007,wybutosine
+W,602.13737,peroxywybutosine
+e,347.05185,ac4C(N4-acetylcytidine)
+5,1560.28669,s4U labeled with LD555
+3,1561.29299,s4U labeled with LD555 +1
+"""",343.06817,"m1A,1-methyladenosine"
+%,321.01844,s2C
+µ,307.033,U prime
+M,347.05185,N4-acetylcytidine
+I,330.03654,Inosine
+Q,471.11551,queuosine
+6,474.09003,"N6-threonylcarbamoyladenosine, t6A"
+0,0,place holder
+\,334.0566,m5Um
+#,359.06308,Gm
+7,359.06308,m7G
+B,319.05694,Cm
+J,320.04095,Um
+K,359.06308,m1G
+L,359.06308,m2G
+P,306.0253,pseudouridine
+T,320.04095,m5U
+Y,212.0106,wybutosine
+V,361.02456,PS-G
+dehydrated,-18.010565,
+Na,21.98194,
+K,37.95588,
+Co,56.91754,
