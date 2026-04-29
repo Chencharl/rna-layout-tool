@@ -1,14 +1,69 @@
 export type MoleculeType = "tRNA" | "mRNA" | "rRNA" | "custom";
 export type NumberingMode = "raw" | "trna_standard";
 export type StemStyle = "line" | "dashed";
-export type EditorTheme = "light" | "publication" | "slides";
+export type EditorTheme = "light" | "publication" | "slides" | "base_only";
 export type LabelKind = "modification" | "adduct" | "note";
+export type AnnotationSource =
+  | "current_user_input"
+  | "current_project_annotation"
+  | "imported_current_project"
+  | "demo"
+  | "default_template"
+  | "previous_render"
+  | "unknown";
+export type RnaRegion =
+  | "acceptor"
+  | "d-loop"
+  | "anticodon"
+  | "variable"
+  | "t-loop"
+  | "tail"
+  | "extra";
+export type RnaDomainType =
+  | "acceptor_candidate"
+  | "D_arm_candidate"
+  | "anticodon_arm_candidate"
+  | "variable_region_candidate"
+  | "T_arm_candidate"
+  | "tail_candidate"
+  | "unassigned_candidate"
+  | "unknown";
+export type RnaNodeStatus =
+  | "present"
+  | "missing"
+  | "inserted"
+  | "inferred"
+  | "mismatch"
+  | "unassigned_extra";
+export type RnaPairStatus = "normal" | "wobble" | "mismatch" | "missing" | "custom";
+export type RnaRenderMode =
+  | "standard"
+  | "sprinzl_template"
+  | "sprinzl_validation"
+  | "short_atypical"
+  | "expanded_variable"
+  | "long_variable_arm"
+  | "structure_constrained_mode"
+  | "atypical_mode";
 
 export type RnaNucleotide = {
   pos: number;
   base: string;
   x: number;
   y: number;
+  sequenceIndex?: number;
+  slotOrder?: number;
+  originalToken?: string;
+  positionLabel?: string;
+  region?: RnaRegion;
+  status?: RnaNodeStatus;
+  modification?: string;
+  pairingPartner?: string;
+  pairStatus?: RnaPairStatus;
+  dotBracketChar?: string;
+  pairedIndex?: number;
+  structuralDomain?: RnaDomainType;
+  sprinzlLabel?: string;
   visible?: boolean;
   fontSize?: number;
   color?: string;
@@ -18,12 +73,14 @@ export type RnaStem = {
   from: number;
   to: number;
   style?: StemStyle;
+  pairStatus?: RnaPairStatus;
 };
 
 export type RnaLabel = {
   id: string;
   pos: number;
   kind: LabelKind;
+  source: AnnotationSource;
   text: string;
   color: string;
   dx: number;
@@ -42,6 +99,9 @@ export type RnaAnnotation = {
 
 export type RnaSettings = {
   showPositionNumbers: boolean;
+  showOnlyModifiedPositions: boolean;
+  showSprinzlOverlay: boolean;
+  runSprinzlValidation: boolean;
   showStemLines: boolean;
   canvasWidth: number;
   canvasHeight: number;
@@ -62,6 +122,43 @@ export type RnaProject = {
   labels: RnaLabel[];
   annotations: RnaAnnotation[];
   settings: RnaSettings;
+  mappingWarnings?: string[];
+  renderMode?: RnaRenderMode;
+  unassignedExtraBases?: string[];
+  domains?: RnaDomain[];
+  anticodon?: RnaAnticodonSummary;
+  ccaStatus?: RnaCcaStatus;
+};
+
+export type RnaDomain = {
+  id: string;
+  type: RnaDomainType;
+  range: { start: number; end: number };
+  score?: RnaDomainScore;
+  anchorPosition?: "top" | "bottom" | "left" | "right" | "center-right" | "top-right" | "unknown";
+  stem?: {
+    fivePrimeStart: number;
+    fivePrimeEnd: number;
+    threePrimeStart: number;
+    threePrimeEnd: number;
+    length: number;
+  };
+  tentative: boolean;
+};
+
+export type RnaDomainScore = {
+  stemLength: number;
+  loopSizeFitness: number;
+  centrality: number;
+  symmetry: number;
+  total: number;
+};
+
+export type RnaCcaStatus = "full" | "partial" | "missing";
+
+export type RnaAnticodonSummary = {
+  sequence: string;
+  confidence: "high" | "medium" | "low" | "unknown";
 };
 
 export type RnaTemplate = {
@@ -70,7 +167,7 @@ export type RnaTemplate = {
   moleculeType: MoleculeType;
   length?: number;
   numberingMode?: NumberingMode;
-  nucleotides: Array<{ pos: number; x: number; y: number }>;
+  nucleotides: Array<Partial<RnaNucleotide> & { pos: number; x: number; y: number }>;
   stems?: RnaStem[];
 };
 
@@ -84,6 +181,10 @@ export type ValidationMessage = {
 
 export type TableRow = {
   pos: number;
+  positionLabel?: string;
+  sprinzlLabel?: string;
+  sequenceIndex?: number;
+  status?: RnaNodeStatus;
   base: string;
   x: number;
   y: number;

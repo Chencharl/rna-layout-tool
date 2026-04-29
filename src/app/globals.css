@@ -90,8 +90,7 @@ code {
 
 .hero-card,
 .panel,
-.canvas-panel,
-.table-panel {
+.canvas-panel {
   border: 1px solid var(--border);
   border-radius: 26px;
   background: var(--panel);
@@ -143,8 +142,7 @@ code {
 }
 
 .panel,
-.canvas-panel,
-.table-panel {
+.canvas-panel {
   padding: 22px;
 }
 
@@ -219,38 +217,6 @@ code {
 
 .hidden-input {
   display: none;
-}
-
-.validation-list {
-  display: grid;
-  gap: 10px;
-}
-
-.validation-item {
-  display: grid;
-  gap: 4px;
-  border-radius: 16px;
-  padding: 12px 14px;
-  border: 1px solid transparent;
-}
-
-.validation-item strong {
-  text-transform: capitalize;
-}
-
-.validation-item.error {
-  background: rgba(220, 38, 38, 0.08);
-  border-color: rgba(220, 38, 38, 0.18);
-}
-
-.validation-item.warning {
-  background: rgba(217, 119, 6, 0.08);
-  border-color: rgba(217, 119, 6, 0.18);
-}
-
-.validation-item.success {
-  background: rgba(15, 118, 110, 0.08);
-  border-color: rgba(15, 118, 110, 0.18);
 }
 
 .canvas-heading {
@@ -399,48 +365,10 @@ code {
   background: #991b1b;
 }
 
-.empty-state,
-.advanced-copy {
+.empty-state {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
-}
-
-.advanced-panel {
-  display: grid;
-  gap: 14px;
-}
-
-.table-shell {
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--panel-strong);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 840px;
-}
-
-th,
-td {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-  padding: 10px;
-  text-align: left;
-  vertical-align: middle;
-}
-
-thead th {
-  position: sticky;
-  top: 0;
-  background: rgba(248, 250, 252, 0.98);
-  z-index: 1;
-}
-
-td input {
-  min-width: 82px;
 }
 
 .ghost-button {
@@ -466,8 +394,7 @@ td input {
 
   .hero-card,
   .panel,
-  .canvas-panel,
-  .table-panel {
+  .canvas-panel {
     border-radius: 20px;
     padding: 18px;
   }

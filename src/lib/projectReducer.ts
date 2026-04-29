@@ -8,6 +8,8 @@ export type ProjectAction =
   | { type: "update_nucleotide"; pos: number; key: "base" | "x" | "y" | "color" | "fontSize" | "visible"; value: string | number | boolean | undefined }
   | { type: "update_nucleotides"; nucleotides: Array<{ pos: number; x: number; y: number }> }
   | { type: "replace_stems"; stems: RnaProject["stems"] }
+  | { type: "add_stem"; stem: RnaProject["stems"][number] }
+  | { type: "remove_stem"; from: number; to: number }
   | { type: "insert_nucleotide"; afterPos?: number; x: number; y: number; base?: string }
   | { type: "delete_nucleotide"; pos: number }
   | { type: "add_label"; label: RnaLabel }
@@ -55,7 +57,11 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
         };
 
         if (action.key === "base" && typeof action.value === "string") {
-          sequence[action.pos - 1] = action.value;
+          const sequenceIndex = nucleotide.sequenceIndex ?? action.pos;
+
+          if (sequenceIndex >= 1 && sequenceIndex <= sequence.length) {
+            sequence[sequenceIndex - 1] = action.value;
+          }
         }
 
         return next;
@@ -91,6 +97,33 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
       return {
         ...project,
         stems: action.stems,
+      };
+    case "add_stem": {
+      const exists = project.stems.some(
+        (stem) =>
+          (stem.from === action.stem.from && stem.to === action.stem.to) ||
+          (stem.from === action.stem.to && stem.to === action.stem.from),
+      );
+
+      if (exists) {
+        return project;
+      }
+
+      return {
+        ...project,
+        stems: [...project.stems, action.stem],
+      };
+    }
+    case "remove_stem":
+      return {
+        ...project,
+        stems: project.stems.filter(
+          (stem) =>
+            !(
+              (stem.from === action.from && stem.to === action.to) ||
+              (stem.from === action.to && stem.to === action.from)
+            ),
+        ),
       };
     case "insert_nucleotide": {
       const insertionIndex =
@@ -155,7 +188,13 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
     case "add_label":
       return {
         ...project,
-        labels: [...project.labels, action.label],
+        labels: [
+          ...project.labels,
+          {
+            ...action.label,
+            source: action.label.source ?? "current_user_input",
+          },
+        ],
       };
     case "update_label":
       return {
@@ -192,6 +231,7 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
               id: `label-${action.pos}`,
               pos: action.pos,
               kind: "modification" as const,
+              source: "current_user_input" as const,
               text: "",
               color: "#b91c1c",
               dx: 14,

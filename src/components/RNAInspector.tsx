@@ -49,7 +49,9 @@ export function RNAInspector({
       <div className="section-heading">
         <h2>Position Editor</h2>
         <span className="pill">
-          {nucleotide ? `Pos ${nucleotide.pos}` : "Choose a position"}
+          {nucleotide
+            ? `Pos ${nucleotide.positionLabel ?? nucleotide.pos}`
+            : "Choose a position"}
         </span>
       </div>
 
@@ -66,6 +68,11 @@ export function RNAInspector({
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="field">
+          <span>Sprinzl label</span>
+          <input value={nucleotide?.sprinzlLabel ?? ""} disabled />
         </label>
 
         <label className="field">

@@ -10,6 +10,9 @@ export function validateProject(
   templates: RnaTemplate[],
 ): ValidationMessage[] {
   const messages: ValidationMessage[] = [];
+  const isStructureConstrained =
+    project.renderMode === "structure_constrained_mode" ||
+    project.renderMode === "atypical_mode";
   const template = getTemplateById(project.templateId, templates);
   const resolvedTemplate = template
     ? materializeTemplate(template, project.sequence.length)
@@ -23,7 +26,7 @@ export function validateProject(
     });
   }
 
-  if (resolvedTemplate?.length && resolvedTemplate.length !== project.sequence.length) {
+  if (!isStructureConstrained && resolvedTemplate?.length && resolvedTemplate.length !== project.sequence.length) {
     messages.push({
       id: "template-length-mismatch",
       level: "warning",
@@ -31,11 +34,31 @@ export function validateProject(
     });
   }
 
-  if (project.templateId === "trna_classic" && project.sequence.length !== 76) {
+  project.mappingWarnings?.forEach((warning, index) => {
     messages.push({
-      id: "trna-flex-length",
+      id: `mapping-warning-${index}`,
       level: "warning",
-      text: "The classic tRNA scaffold is being used as a flexible starting point rather than a strict 76-nt lock. Drag points and add or remove positions as needed.",
+      text: warning,
+    });
+  });
+
+  if (project.renderMode === "structure_constrained_mode" || project.renderMode === "atypical_mode") {
+    messages.push({
+      id: "render-mode-structure",
+      level: "success",
+      text: "Structure-constrained render: dot-bracket controls pairs and layout; Sprinzl labels are annotation only.",
+    });
+  } else if (project.renderMode === "sprinzl_validation") {
+    messages.push({
+      id: "render-mode-sprinzl-validation",
+      level: "warning",
+      text: "Optional Sprinzl validation is enabled; canonical tRNA warnings may be shown.",
+    });
+  } else if (project.renderMode === "sprinzl_template") {
+    messages.push({
+      id: "render-mode-sprinzl-template",
+      level: "success",
+      text: "Sprinzl template render: reference geometry is heuristic and validation is off.",
     });
   }
 
@@ -71,7 +94,7 @@ export function validateProject(
     }
   });
 
-  if (project.nucleotides.length !== project.sequence.length) {
+  if (!isStructureConstrained && project.templateId !== "trna_classic" && project.nucleotides.length !== project.sequence.length) {
     messages.push({
       id: "sequence-sync",
       level: "error",

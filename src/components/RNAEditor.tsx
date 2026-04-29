@@ -4,10 +4,8 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { RNACanvas } from "@/components/RNACanvas";
 import { RNAInspector } from "@/components/RNAInspector";
-import { RNATable } from "@/components/RNATable";
 import { RNAToolbar } from "@/components/RNAToolbar";
-import { ValidationPanel } from "@/components/ValidationPanel";
-import { getCatalogItem } from "@/lib/biology";
+import { filterCurrentAnnotations, getCatalogItem } from "@/lib/biology";
 import { createDefaultProject } from "@/lib/defaultProject";
 import { exportSvgMarkupToPng } from "@/lib/exportPng";
 import { createStandaloneSvgMarkup, getSvgFilename } from "@/lib/exportSvg";
@@ -15,7 +13,7 @@ import {
   downloadText,
   parseProjectFile,
   parseTemplateFile,
-  serializeProject,
+  serializeFigureData,
   slugifyTitle,
 } from "@/lib/projectIO";
 import { projectReducer } from "@/lib/projectReducer";
@@ -26,20 +24,20 @@ import {
   remapProjectToTemplate,
   syncProjectToSequence,
 } from "@/lib/templates";
-import { validateProject } from "@/lib/validation";
-import { parseViennaDotBracket } from "@/lib/vienna";
+import { buildStructureConstrainedLayout } from "@/lib/structureLayout";
+import { buildSprinzlTRnaLayout } from "@/lib/sprinzl";
 import type {
   RnaLabel,
   RnaNucleotide,
+  RnaPairStatus,
   RnaProject,
   RnaStem,
   RnaTemplate,
-  TableRow,
   ValidationMessage,
 } from "@/lib/types";
 
 const INITIAL_PROJECT = createDefaultProject();
-type CanvasMode = "move-bases" | "move-labels" | "add-point";
+type CanvasMode = "move-bases" | "move-labels" | "edit-bonds";
 type StemAlignmentGroup = {
   topOrLeft: number[];
   bottomOrRight: number[];
@@ -48,6 +46,20 @@ type StemAlignmentGroup = {
 
 function areNeighboringStemPairs(left: RnaStem, right: RnaStem) {
   return Math.abs(left.from - right.from) === 1 && Math.abs(left.to - right.to) === 1;
+}
+
+function getManualPairStatus(leftBase = "", rightBase = ""): RnaPairStatus {
+  const pair = `${leftBase.toUpperCase()}-${rightBase.toUpperCase()}`;
+
+  if (["A-U", "U-A", "G-C", "C-G"].includes(pair)) {
+    return "normal";
+  }
+
+  if (pair === "G-U" || pair === "U-G") {
+    return "wobble";
+  }
+
+  return "mismatch";
 }
 
 function getStemAlignmentGroup(
@@ -161,37 +173,11 @@ export function RNAEditor() {
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("move-bases");
   const [selectedPos, setSelectedPos] = useState<number | null>(8);
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>("label-8");
-  const [showAdvancedTable, setShowAdvancedTable] = useState(false);
+  const [bondStartPos, setBondStartPos] = useState<number | null>(null);
   const [transparentPng, setTransparentPng] = useState(true);
   const svgRef = useRef<SVGSVGElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const templateInputRef = useRef<HTMLInputElement>(null);
-
-  const validationMessages = useMemo(() => {
-    const projectMessages = validateProject(project, templates);
-
-    return [sequenceMessage, editorMessage, ...projectMessages].filter(
-      Boolean,
-    ) as ValidationMessage[];
-  }, [editorMessage, project, sequenceMessage, templates]);
-
-  const rows = useMemo<TableRow[]>(() => {
-    return project.nucleotides.map((nucleotide) => {
-      const label = project.labels.find((entry) => entry.pos === nucleotide.pos);
-
-      return {
-        pos: nucleotide.pos,
-        base: nucleotide.base,
-        x: nucleotide.x,
-        y: nucleotide.y,
-        labelId: label?.id,
-        labelText: label?.text ?? "",
-        labelColor: label?.color ?? "#b91c1c",
-        labelDx: label?.dx ?? 14,
-        labelDy: label?.dy ?? -16,
-      };
-    });
-  }, [project.labels, project.nucleotides]);
 
   const selectedNucleotide = useMemo(
     () => project.nucleotides.find((nucleotide) => nucleotide.pos === selectedPos),
@@ -245,6 +231,7 @@ export function RNAEditor() {
         id,
         pos,
         kind,
+        source: "current_user_input",
         text,
         color: color ?? getCatalogItem(text)?.color ?? "#334155",
         dx: offset.dx,
@@ -323,6 +310,38 @@ export function RNAEditor() {
     });
   }
 
+  function handleToggleSetting(
+    key:
+      | "showPositionNumbers"
+      | "showOnlyModifiedPositions"
+      | "showSprinzlOverlay"
+      | "runSprinzlValidation"
+      | "showStemLines",
+    value: boolean,
+  ) {
+    const nextProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        [key]: value,
+      },
+    };
+    const shouldRebuildSprinzlTemplate =
+      (key === "runSprinzlValidation" || key === "showSprinzlOverlay") &&
+      (project.renderMode === "sprinzl_template" || project.renderMode === "sprinzl_validation");
+
+    if (shouldRebuildSprinzlTemplate) {
+      const template = getTemplateById(project.templateId, templates);
+
+      if (template) {
+        replaceProject(remapProjectToTemplate(nextProject, template));
+        return;
+      }
+    }
+
+    dispatch({ type: "update_setting", key, value });
+  }
+
   async function handleProjectImport(file: File) {
     const text = await file.text();
     const result = parseProjectFile(text);
@@ -378,8 +397,8 @@ export function RNAEditor() {
 
   function handleExportProject() {
     downloadText(
-      serializeProject(project),
-      `${slugifyTitle(project.title)}.json`,
+      serializeFigureData(project),
+      `${slugifyTitle(project.title)}-figure.json`,
       "application/json",
     );
   }
@@ -429,23 +448,104 @@ export function RNAEditor() {
     });
   }
 
-  function handleApplySecondaryStructure() {
-    const result = parseViennaDotBracket(secondaryStructureText, project.sequence.length);
+  function handleBondNodeClick(pos: number) {
+    setSelectedPos(pos);
 
-    if (result.error) {
+    if (bondStartPos === null || bondStartPos === pos) {
+      setBondStartPos(pos);
+      return;
+    }
+
+    const from = project.nucleotides.find((nucleotide) => nucleotide.pos === bondStartPos);
+    const to = project.nucleotides.find((nucleotide) => nucleotide.pos === pos);
+
+    if (!from || !to) {
+      setBondStartPos(pos);
+      return;
+    }
+
+    const pairStatus = getManualPairStatus(from.base, to.base);
+
+    dispatch({
+      type: "add_stem",
+      stem: {
+        from: from.pos,
+        to: to.pos,
+        pairStatus,
+        style: pairStatus === "mismatch" ? "dashed" : undefined,
+      },
+    });
+    setBondStartPos(null);
+  }
+
+  function handleApplySecondaryStructure() {
+    if (project.templateId === "trna_classic") {
+      const result = buildSprinzlTRnaLayout(project.sequence, {
+        runValidation: project.settings.runSprinzlValidation,
+        dotBracket: secondaryStructureText,
+      });
+      const renderedNodes = project.settings.showSprinzlOverlay
+        ? result.mappedPositions
+        : result.mappedPositions.filter((node) => node.status !== "missing");
+      const renderedPositions = new Set(renderedNodes.map((node) => node.pos));
+      const nextProject: RnaProject = {
+        ...project,
+        stems: result.stems.filter(
+          (stem) => renderedPositions.has(stem.from) && renderedPositions.has(stem.to),
+        ),
+        nucleotides: renderedNodes,
+        labels: filterCurrentAnnotations(project.labels, Math.max(0, ...renderedPositions)).filter(
+          (label) => renderedPositions.has(label.pos),
+        ),
+        mappingWarnings: result.warnings,
+        renderMode: result.renderMode,
+        unassignedExtraBases: result.unassignedExtraBases,
+      };
+      const nextViewport = getViewportForProject(nextProject);
+
+      dispatch({ type: "replace_project", project: nextProject });
+      setZoom(nextViewport.zoom);
+      setViewportCenter(nextViewport.center);
       setEditorMessage({
-        id: "vienna-error",
-        level: "error",
-        text: result.error,
+        id: "vienna-success",
+        level: "success",
+        text: `Applied dot-bracket pairs onto the Sprinzl slot map without changing slot coordinates.`,
       });
       return;
     }
 
-    dispatch({ type: "replace_stems", stems: result.stems });
+    const result = buildStructureConstrainedLayout(project.sequence, secondaryStructureText);
+
+    if (result.nodes.length === 0) {
+      setEditorMessage({
+        id: "vienna-error",
+        level: "error",
+        text: result.warnings.join(" "),
+      });
+      return;
+    }
+
+    const nextProject: RnaProject = {
+      ...project,
+      stems: result.stems,
+      nucleotides: result.nodes,
+      labels: filterCurrentAnnotations(project.labels, result.nodes.length),
+      mappingWarnings: result.warnings,
+      renderMode: result.renderMode,
+      unassignedExtraBases: [],
+      domains: result.domains,
+      anticodon: result.anticodon,
+      ccaStatus: result.ccaStatus,
+    };
+    const nextViewport = getViewportForProject(nextProject);
+
+    dispatch({ type: "replace_project", project: nextProject });
+    setZoom(nextViewport.zoom);
+    setViewportCenter(nextViewport.center);
     setEditorMessage({
       id: "vienna-success",
       level: "success",
-      text: `Applied ${result.stems.length} Vienna base pairs as visible stems.`,
+      text: `Applied ${result.pairEdges.length} dot-bracket pairs as the primary structure constraint.`,
     });
   }
 
@@ -573,9 +673,7 @@ export function RNAEditor() {
             text: `Rebuilt the scaffold for ${project.sequence.length} positions.`,
           });
         }}
-        onToggleSetting={(key, value) =>
-          dispatch({ type: "update_setting", key, value })
-        }
+        onToggleSetting={handleToggleSetting}
         onThemeChange={(value) =>
           dispatch({ type: "update_setting", key: "theme", value })
         }
@@ -604,7 +702,6 @@ export function RNAEditor() {
 
       <div className="editor-main">
         <div className="main-top-grid">
-          <ValidationPanel messages={validationMessages} />
           <RNAInspector
             nucleotide={selectedNucleotide}
             labelsAtPosition={labelsAtPosition}
@@ -695,54 +792,14 @@ export function RNAEditor() {
           onRemoveLabel={(id) => {
             dispatch({ type: "remove_label_by_id", id });
           }}
-          onCanvasInsert={(x, y) => {
-            dispatch({
-              type: "insert_nucleotide",
-              afterPos: selectedPos ?? project.nucleotides.length,
-              x,
-              y,
-              base: "N",
-            });
-            setSelectedPos((selectedPos ?? project.nucleotides.length) + 1);
-            setSelectedLabelId(null);
-            setCanvasMode("move-bases");
+          onBondNodeClick={handleBondNodeClick}
+          onRemoveStem={(stem) => {
+            dispatch({ type: "remove_stem", from: stem.from, to: stem.to });
+            if (bondStartPos === stem.from || bondStartPos === stem.to) {
+              setBondStartPos(null);
+            }
           }}
         />
-        <section className="panel advanced-panel">
-          <div className="section-heading">
-            <h2>Advanced Table</h2>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => setShowAdvancedTable((current) => !current)}
-            >
-              {showAdvancedTable ? "Hide" : "Show"}
-            </button>
-          </div>
-          <p className="advanced-copy">
-            Use this only for precise bulk tweaking. The main workflow is now direct dragging on
-            the canvas.
-          </p>
-          {showAdvancedTable && (
-            <RNATable
-              rows={rows}
-              onBaseChange={(pos, value) =>
-                dispatch({ type: "update_nucleotide", pos, key: "base", value })
-              }
-              onCoordinateChange={(pos, key, value) => {
-                if (Number.isNaN(value)) {
-                  return;
-                }
-
-                dispatch({ type: "update_nucleotide", pos, key, value });
-              }}
-              onLabelChange={(pos, key, value) =>
-                dispatch({ type: "upsert_label", pos, patch: { [key]: value } })
-              }
-              onRemoveLabel={(pos) => dispatch({ type: "remove_label", pos })}
-            />
-          )}
-        </section>
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-import type { MarkCatalogItem, PositionMarkRule, RnaLabel } from "./types";
+import type { AnnotationSource, MarkCatalogItem, PositionMarkRule, RnaLabel, RnaNucleotide } from "./types";
 
 export const MODIFICATION_CATALOG: MarkCatalogItem[] = [
   { symbol: "Y", name: "pseudouridine", color: "#475569", kind: "modification", source: "mod_bank" },
@@ -181,6 +181,7 @@ export function buildAutoSequenceLabels(
         id: `auto-seq-${pos}-${labelText}`,
         pos,
         kind: catalogItem?.kind ?? "modification",
+        source: "previous_render",
         text: labelText,
         color: catalogItem?.color ?? AUTO_LABEL_COLOR[labelText] ?? "#334155",
         dx: 26,
@@ -190,6 +191,70 @@ export function buildAutoSequenceLabels(
       },
     ];
   });
+}
+
+export function buildAutoLabelsForNucleotides(
+  sequence: string[],
+  nucleotides: RnaNucleotide[],
+  existingLabels: RnaLabel[],
+): RnaLabel[] {
+  return nucleotides.flatMap((nucleotide) => {
+    if (!nucleotide.sequenceIndex) {
+      return [];
+    }
+
+    const token = sequence[nucleotide.sequenceIndex - 1];
+    if (!token || !shouldAutoLabelToken(token)) {
+      return [];
+    }
+
+    const normalized = token.trim();
+    const labelText = AUTO_LABEL_TEXT[normalized] ?? normalized;
+    const hasExisting = existingLabels.some(
+      (label) => label.pos === nucleotide.pos && label.text.trim() === labelText,
+    );
+
+    if (hasExisting) {
+      return [];
+    }
+
+    const catalogItem = getCatalogItem(labelText);
+
+    return [
+      {
+        id: `auto-seq-${nucleotide.pos}-${labelText}`,
+        pos: nucleotide.pos,
+        kind: catalogItem?.kind ?? "modification",
+        source: "previous_render",
+        text: labelText,
+        color: catalogItem?.color ?? AUTO_LABEL_COLOR[labelText] ?? "#334155",
+        dx: 26,
+        dy: -18,
+        fontSize: 12,
+        fontWeight: 700,
+      },
+    ];
+  });
+}
+
+const CURRENT_ANNOTATION_SOURCES = new Set<AnnotationSource>([
+  "current_user_input",
+  "current_project_annotation",
+  "imported_current_project",
+]);
+
+export function normalizeAnnotationSource(source: AnnotationSource | undefined): AnnotationSource {
+  return source ?? "unknown";
+}
+
+export function filterCurrentAnnotations(labels: RnaLabel[], maxPosition: number): RnaLabel[] {
+  return labels
+    .map((label) => ({
+      ...label,
+      source: normalizeAnnotationSource(label.source),
+    }))
+    .filter((label) => CURRENT_ANNOTATION_SOURCES.has(label.source))
+    .filter((label) => label.pos >= 1 && label.pos <= maxPosition);
 }
 
 export function getPositionRule(pos: number): PositionMarkRule | undefined {

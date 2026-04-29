@@ -13,6 +13,39 @@ export function serializeProject(project: RnaProject): string {
   return JSON.stringify(project, null, 2);
 }
 
+export function serializeFigureData(project: RnaProject): string {
+  return JSON.stringify(
+    {
+      sequence: project.sequence,
+      slotMapping: project.nucleotides.map((nucleotide) => ({
+        sequenceIndex: nucleotide.sequenceIndex,
+        slot: nucleotide.positionLabel ?? nucleotide.sprinzlLabel ?? nucleotide.pos.toString(),
+        base: nucleotide.base,
+        modification: nucleotide.modification ?? null,
+        x: nucleotide.x,
+        y: nucleotide.y,
+      })),
+      pairEdges: project.stems.map((stem) => ({
+        slotA:
+          project.nucleotides.find((nucleotide) => nucleotide.pos === stem.from)?.positionLabel ??
+          stem.from.toString(),
+        slotB:
+          project.nucleotides.find((nucleotide) => nucleotide.pos === stem.to)?.positionLabel ??
+          stem.to.toString(),
+        type: stem.pairStatus ?? "custom",
+      })),
+      modifications: project.nucleotides
+        .filter((nucleotide) => Boolean(nucleotide.modification))
+        .map((nucleotide) => ({
+          slot: nucleotide.positionLabel ?? nucleotide.sprinzlLabel ?? nucleotide.pos.toString(),
+          type: nucleotide.modification,
+        })),
+    },
+    null,
+    2,
+  );
+}
+
 export function serializeTemplate(template: RnaTemplate): string {
   return JSON.stringify(template, null, 2);
 }
@@ -49,9 +82,16 @@ export function parseProjectFile(text: string): {
     }
 
     const project = parsed as RnaProject;
+    project.settings = {
+      ...project.settings,
+      showOnlyModifiedPositions: project.settings.showOnlyModifiedPositions ?? false,
+      showSprinzlOverlay: project.settings.showSprinzlOverlay ?? false,
+      runSprinzlValidation: project.settings.runSprinzlValidation ?? false,
+    };
     project.labels = project.labels.map((label) => ({
       ...label,
       kind: label.kind ?? "modification",
+      source: label.source ?? "imported_current_project",
     }));
     const embeddedTemplate: RnaTemplate | undefined =
       project.nucleotides.length > 0 && isRecord(parsed)

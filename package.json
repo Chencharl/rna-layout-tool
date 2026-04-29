@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:structure": "node scripts/structure-layout.test.cjs",
     "start": "next start"
   },
   "dependencies": {

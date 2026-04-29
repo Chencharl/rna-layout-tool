@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 
+import { getCatalogItem } from "@/lib/biology";
 import { getDisplayPosition } from "@/lib/numbering";
-import type { RnaLabel, RnaProject } from "@/lib/types";
+import type { RnaLabel, RnaProject, RnaStem } from "@/lib/types";
 
-type CanvasMode = "move-bases" | "move-labels" | "add-point";
+type CanvasMode = "move-bases" | "move-labels" | "edit-bonds";
 
 type RNACanvasProps = {
   project: RnaProject;
@@ -21,7 +22,8 @@ type RNACanvasProps = {
   onNucleotidePositionChange: (pos: number, x: number, y: number) => void;
   onLabelOffsetChange: (label: RnaLabel, dx: number, dy: number) => void;
   onRemoveLabel: (id: string) => void;
-  onCanvasInsert: (x: number, y: number) => void;
+  onBondNodeClick: (pos: number) => void;
+  onRemoveStem: (stem: RnaStem) => void;
 };
 
 type DragState =
@@ -67,6 +69,15 @@ const THEME_STYLES = {
     accent: "#ea580c",
     circleFill: "#ffffff",
     selectedFill: "#ffedd5",
+  },
+  base_only: {
+    background: "#ffffff",
+    stroke: "#111827",
+    base: "#050505",
+    number: "#111827",
+    accent: "#111827",
+    circleFill: "transparent",
+    selectedFill: "rgba(250, 204, 21, 0.24)",
   },
 } as const;
 
@@ -179,6 +190,18 @@ function getMarkFill(kind: RnaLabel["kind"]) {
   return "#f8fafc";
 }
 
+function getStemStroke(pairStatus?: string) {
+  if (pairStatus === "wobble") {
+    return "#0f766e";
+  }
+
+  if (pairStatus === "mismatch") {
+    return "#dc2626";
+  }
+
+  return undefined;
+}
+
 export function RNACanvas({
   project,
   svgRef,
@@ -193,7 +216,8 @@ export function RNACanvas({
   onNucleotidePositionChange,
   onLabelOffsetChange,
   onRemoveLabel,
-  onCanvasInsert,
+  onBondNodeClick,
+  onRemoveStem,
 }: RNACanvasProps) {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const theme = THEME_STYLES[project.settings.theme];
@@ -210,22 +234,70 @@ export function RNACanvas({
   const orderedNucleotides = [...project.nucleotides].sort((left, right) => left.pos - right.pos);
   const isConventionalTRna =
     project.moleculeType === "tRNA" && project.templateId === "trna_classic";
-  const tRnaNodeRadius = 17;
+  const sequenceOrderedNucleotides = [...project.nucleotides]
+    .filter((nucleotide) => nucleotide.sequenceIndex !== undefined)
+    .sort(
+      (left, right) =>
+        (left.sequenceIndex ?? Number.MAX_SAFE_INTEGER) -
+          (right.sequenceIndex ?? Number.MAX_SAFE_INTEGER) ||
+        left.pos - right.pos,
+    );
+  const slotOrderedNucleotides = [...project.nucleotides]
+    .filter(
+      (nucleotide) =>
+        nucleotide.sequenceIndex !== undefined &&
+        nucleotide.slotOrder !== undefined &&
+        nucleotide.status !== "missing" &&
+        nucleotide.status !== "unassigned_extra",
+    )
+    .sort(
+      (left, right) =>
+        (left.slotOrder ?? Number.MAX_SAFE_INTEGER) -
+          (right.slotOrder ?? Number.MAX_SAFE_INTEGER) ||
+        left.pos - right.pos,
+    );
+  const isBaseOnly = project.settings.theme === "base_only";
+  const isStructureConstrained =
+    project.renderMode === "structure_constrained_mode" ||
+    project.renderMode === "atypical_mode";
+  const tRnaNodeRadius = isBaseOnly ? 11 : 17;
+  const backboneSourceNodes =
+    isConventionalTRna && slotOrderedNucleotides.length > 0
+      ? slotOrderedNucleotides
+      : sequenceOrderedNucleotides.length > 0
+        ? sequenceOrderedNucleotides
+        : orderedNucleotides;
   const backbonePath = buildSmoothPath(
-    orderedNucleotides.map((nucleotide) => ({ x: nucleotide.x, y: nucleotide.y })),
+    backboneSourceNodes.map((nucleotide) => ({ x: nucleotide.x, y: nucleotide.y })),
   );
   const tRnaBackbonePath = buildLinearPath(
-    orderedNucleotides.map((nucleotide) => ({ x: nucleotide.x, y: nucleotide.y })),
+    backboneSourceNodes.map((nucleotide) => ({ x: nucleotide.x, y: nucleotide.y })),
   );
+  const backboneSegments = backboneSourceNodes
+    .slice(0, -1)
+    .map((nucleotide, index) => ({
+      from: nucleotide,
+      to: backboneSourceNodes[index + 1],
+    }))
+    .filter((segment) => {
+      if (!isStructureConstrained) {
+        return true;
+      }
+
+      return (
+        segment.from.sequenceIndex !== undefined &&
+        segment.to.sequenceIndex !== undefined &&
+        segment.to.sequenceIndex === segment.from.sequenceIndex + 1
+      );
+    });
   const canvasCenter = {
     x: project.settings.canvasWidth / 2,
     y: project.settings.canvasHeight / 2,
   };
-  const firstNucleotide = orderedNucleotides[0];
-  const secondNucleotide = orderedNucleotides[1];
-  const lastNucleotide = orderedNucleotides.at(-1);
-  const previousNucleotide =
-    orderedNucleotides.length > 1 ? orderedNucleotides[orderedNucleotides.length - 2] : undefined;
+  const firstNucleotide = backboneSourceNodes[0];
+  const secondNucleotide = backboneSourceNodes[1];
+  const lastNucleotide = backboneSourceNodes.at(-1);
+  const previousNucleotide = backboneSourceNodes.at(-2);
   const fivePrimeLabel = firstNucleotide
     ? getTerminalLabelPosition(firstNucleotide, secondNucleotide)
     : null;
@@ -301,6 +373,11 @@ export function RNACanvas({
     event.stopPropagation();
     onSelectPos(pos);
 
+    if (mode === "edit-bonds") {
+      onBondNodeClick(pos);
+      return;
+    }
+
     if (mode !== "move-bases") {
       return;
     }
@@ -315,13 +392,6 @@ export function RNACanvas({
   }
 
   function handleCanvasClick(event: React.MouseEvent<SVGSVGElement>) {
-    const point = clientToSvg(event.clientX, event.clientY);
-
-    if (mode === "add-point") {
-      onCanvasInsert(Math.round(point.x), Math.round(point.y));
-      return;
-    }
-
     onSelectPos(null);
   }
 
@@ -333,7 +403,7 @@ export function RNACanvas({
           <p>
             {isConventionalTRna
               ? `${project.title} as a connected tRNA cloverleaf map. Each nucleotide stays on one continuous RNA chain while stem pairings remain visible.`
-              : `${project.title} with a continuous 5&apos;&rarr;3&apos; RNA backbone and publication-style secondary-structure scaffold. Drag bases, drag marks, or click to add a point.`}
+              : `${project.title} with a continuous 5&apos;&rarr;3&apos; RNA backbone and publication-style secondary-structure scaffold. Drag bases, drag marks, or edit pair bonds directly.`}
           </p>
         </div>
         <div className="canvas-actions">
@@ -353,10 +423,10 @@ export function RNACanvas({
           </button>
           <button
             type="button"
-            className={mode === "add-point" ? "active-button" : ""}
-            onClick={() => onModeChange("add-point")}
+            className={mode === "edit-bonds" ? "active-button" : ""}
+            onClick={() => onModeChange("edit-bonds")}
           >
-            Add Point
+            Edit Bonds
           </button>
           <button type="button" onClick={() => onZoomChange(Math.min(zoom + 0.2, 3))}>
             Zoom In
@@ -390,47 +460,24 @@ export function RNACanvas({
             fill={theme.background}
             rx="24"
           />
-          {isConventionalTRna ? (
-            <g pointerEvents="none" opacity="0.42">
-              <line
-                x1="0"
-                y1={canvasCenter.y}
-                x2={project.settings.canvasWidth}
-                y2={canvasCenter.y}
-                stroke="#cbd5e1"
-                strokeDasharray="8 10"
-                strokeWidth="1"
-              />
-              <line
-                x1={canvasCenter.x}
-                y1="0"
-                x2={canvasCenter.x}
-                y2={project.settings.canvasHeight}
-                stroke="#cbd5e1"
-                strokeDasharray="8 10"
-                strokeWidth="1"
-              />
-              <text
-                x={canvasCenter.x + 10}
-                y="34"
-                fill="#94a3b8"
-                fontSize="11"
-                fontFamily="'IBM Plex Mono', 'SFMono-Regular', monospace"
-              >
-                Y
-              </text>
-              <text
-                x={project.settings.canvasWidth - 34}
-                y={canvasCenter.y - 10}
-                fill="#94a3b8"
-                fontSize="11"
-                fontFamily="'IBM Plex Mono', 'SFMono-Regular', monospace"
-              >
-                X
-              </text>
+          {isStructureConstrained && !isBaseOnly ? (
+            <g pointerEvents="none">
+              {backboneSegments.map((segment) => (
+                <line
+                  key={`backbone-${segment.from.pos}-${segment.to.pos}`}
+                  x1={segment.from.x}
+                  y1={segment.from.y}
+                  x2={segment.to.x}
+                  y2={segment.to.y}
+                  stroke={theme.accent}
+                  strokeOpacity="0.3"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                />
+              ))}
             </g>
           ) : null}
-          {isConventionalTRna && tRnaBackbonePath ? (
+          {isConventionalTRna && tRnaBackbonePath && !isBaseOnly && !isStructureConstrained ? (
             <path
               d={tRnaBackbonePath}
               fill="none"
@@ -442,7 +489,7 @@ export function RNACanvas({
               pointerEvents="none"
             />
           ) : null}
-          {!isConventionalTRna && backbonePath ? (
+          {!isConventionalTRna && backbonePath && !isBaseOnly && !isStructureConstrained ? (
             <path
               d={backbonePath}
               fill="none"
@@ -466,13 +513,18 @@ export function RNACanvas({
               return (
                 <line
                   key={`${stem.from}-${stem.to}`}
-                  {...trimLine(from, to, isConventionalTRna ? tRnaNodeRadius : 18)}
-                  stroke={isConventionalTRna ? theme.accent : theme.accent}
+                  {...trimLine(from, to, isBaseOnly ? 13 : isConventionalTRna ? tRnaNodeRadius : 18)}
+                  stroke={getStemStroke(stem.pairStatus) ?? theme.accent}
                   strokeDasharray={stem.style === "dashed" ? "5 5" : undefined}
-                  strokeWidth={isConventionalTRna ? "2.8" : "4"}
+                  strokeWidth={isBaseOnly ? "2.4" : isConventionalTRna ? "2.8" : "4"}
                   strokeLinecap="round"
-                  opacity="0.92"
-                  pointerEvents="none"
+                  opacity={isBaseOnly ? "1" : "0.92"}
+                  pointerEvents={mode === "edit-bonds" ? "visibleStroke" : "none"}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onRemoveStem(stem);
+                  }}
                 />
               );
             })}
@@ -483,13 +535,44 @@ export function RNACanvas({
                 handleNucleotideMouseDown(event, nucleotide.pos, nucleotide.x, nucleotide.y)
               }
             >
-              {isConventionalTRna ? (
+              {isBaseOnly ? (
+                <circle
+                  cx={nucleotide.x}
+                  cy={nucleotide.y}
+                  r="16"
+                  fill={selectedPos === nucleotide.pos ? theme.selectedFill : "transparent"}
+                  stroke={
+                    selectedPos === nucleotide.pos
+                      ? "#f59e0b"
+                      : nucleotide.status === "missing"
+                        ? "#d1d5db"
+                        : "transparent"
+                  }
+                  strokeDasharray={nucleotide.status === "missing" ? "3 5" : undefined}
+                  strokeWidth={nucleotide.status === "missing" ? "1.4" : "2"}
+                />
+              ) : isConventionalTRna ? (
                 <circle
                   cx={nucleotide.x}
                   cy={nucleotide.y}
                   r={tRnaNodeRadius}
-                  fill={selectedPos === nucleotide.pos ? theme.selectedFill : "#ffffff"}
-                  stroke={selectedPos === nucleotide.pos ? theme.base : theme.accent}
+                  fill={
+                    selectedPos === nucleotide.pos
+                      ? theme.selectedFill
+                      : nucleotide.status === "missing"
+                        ? "#f8fafc"
+                        : "#ffffff"
+                  }
+                  stroke={
+                    selectedPos === nucleotide.pos
+                      ? theme.base
+                      : nucleotide.status === "missing"
+                        ? "#cbd5e1"
+                        : nucleotide.status === "mismatch"
+                          ? "#dc2626"
+                          : theme.accent
+                  }
+                  strokeDasharray={nucleotide.status === "missing" ? "4 4" : undefined}
                   strokeWidth={selectedPos === nucleotide.pos ? "3.2" : "2.6"}
                 />
               ) : (
@@ -510,10 +593,12 @@ export function RNACanvas({
                 fontSize={
                   nucleotide.fontSize ??
                   (isConventionalTRna
-                    ? Math.max(project.settings.nucleotideFontSize - 2, 13)
+                    ? isBaseOnly
+                      ? Math.max(project.settings.nucleotideFontSize + 1, 15)
+                      : Math.max(project.settings.nucleotideFontSize - 2, 13)
                     : project.settings.nucleotideFontSize)
                 }
-                fill={nucleotide.color ?? theme.base}
+                fill={nucleotide.status === "missing" ? "#94a3b8" : nucleotide.color ?? theme.base}
                 fontFamily={
                   isConventionalTRna
                     ? "'Helvetica Neue', 'Arial', sans-serif"
@@ -521,7 +606,7 @@ export function RNACanvas({
                 }
                 fontWeight="700"
               >
-                {nucleotide.base}
+                {nucleotide.status === "missing" ? "" : nucleotide.base}
               </text>
               <circle
                 cx={nucleotide.x}
@@ -530,8 +615,19 @@ export function RNACanvas({
                 fill="transparent"
                 stroke="transparent"
               />
-              {project.settings.showPositionNumbers && (
+              {(project.settings.showPositionNumbers ||
+                (project.settings.showOnlyModifiedPositions && nucleotide.modification)) && (
                 (() => {
+                  const displayLabel =
+                    nucleotide.positionLabel ??
+                    nucleotide.sprinzlLabel ??
+                    nucleotide.sequenceIndex?.toString() ??
+                    getDisplayPosition(nucleotide.pos, project.numberingMode);
+
+                  if (!displayLabel) {
+                    return null;
+                  }
+
                   const numberPosition = isConventionalTRna
                     ? getRadialLabelPosition(nucleotide, canvasCenter, tRnaNodeRadius + 9)
                     : {
@@ -547,19 +643,36 @@ export function RNACanvas({
                       dominantBaseline="middle"
                       fontSize={
                         isConventionalTRna
-                          ? Math.max(project.settings.numberFontSize - 1, 8)
+                          ? isBaseOnly
+                            ? Math.max(project.settings.numberFontSize, 9)
+                            : Math.max(project.settings.numberFontSize - 1, 8)
                           : project.settings.numberFontSize
                       }
-                      fill={isConventionalTRna ? "#dc2626" : theme.number}
+                      fill={isBaseOnly ? theme.number : isConventionalTRna ? "#dc2626" : theme.number}
                       fontFamily="'IBM Plex Mono', 'SFMono-Regular', monospace"
                       fontWeight="600"
                       pointerEvents="none"
                     >
-                      {getDisplayPosition(nucleotide.pos, project.numberingMode)}
+                      {displayLabel}
                     </text>
                   );
                 })()
               )}
+              {nucleotide.modification && nucleotide.status !== "missing" ? (
+                <text
+                  x={nucleotide.x + (isConventionalTRna ? tRnaNodeRadius + 10 : 24)}
+                  y={nucleotide.y - (isConventionalTRna ? tRnaNodeRadius + 7 : 20)}
+                  textAnchor="start"
+                  dominantBaseline="middle"
+                  fontSize={isConventionalTRna ? 11 : 12}
+                  fill={getCatalogItem(nucleotide.modification)?.color ?? "#be123c"}
+                  fontFamily="'Helvetica Neue', 'Avenir Next', 'Segoe UI', sans-serif"
+                  fontWeight="800"
+                  pointerEvents="none"
+                >
+                  {nucleotide.modification}
+                </text>
+              ) : null}
             </g>
           ))}
           {project.labels.map((label) => {
@@ -591,7 +704,7 @@ export function RNACanvas({
                   strokeWidth={isConventionalTRna ? "1" : "1.5"}
                   pointerEvents="none"
                 />
-                {isConventionalTRna ? (
+                {isConventionalTRna && !isBaseOnly ? (
                   <rect
                     x={labelX - labelWidth / 2}
                     y={labelY - labelHeight / 2}
@@ -620,7 +733,7 @@ export function RNACanvas({
                 >
                   {label.text}
                 </text>
-                {isConventionalTRna ? (
+                {isConventionalTRna && !isBaseOnly ? (
                   <g
                     role="button"
                     aria-label={`Remove ${label.text}`}

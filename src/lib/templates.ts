@@ -1,5 +1,9 @@
-import { buildAutoSequenceLabels, getDisplayBaseForToken } from "./biology";
-import type { RnaProject, RnaStem, RnaTemplate } from "./types";
+import {
+  filterCurrentAnnotations,
+  getDisplayBaseForToken,
+} from "./biology";
+import { buildSprinzlTRnaLayout } from "./sprinzl";
+import type { RnaNucleotide, RnaProject, RnaStem, RnaTemplate } from "./types";
 
 type TrnaPoint = { pos: number; x: number; y: number };
 
@@ -209,124 +213,27 @@ const FREE_CANVAS_TEMPLATE: RnaTemplate = {
   stems: [],
 };
 
-function shiftCanonicalPosition(pos: number, extraCount: number) {
-  return pos >= 46 ? pos + extraCount : pos;
-}
-
-function buildVariableArmInsertion(extraCount: number, rightShift: number) {
-  if (extraCount <= 0) {
-    return { points: [], stems: [] as Array<[number, number]> };
-  }
-
-  if (extraCount <= 4) {
-    const centerX = 934 + Math.round(rightShift * 0.42);
-    const centerY = 620;
-    const radiusX = 122;
-    const radiusY = 92;
-    const points = Array.from({ length: extraCount }, (_, index) => {
-      const angle = -0.55 + (1.9 * (index + 1)) / (extraCount + 1);
-      return {
-        x: Math.round(centerX + Math.cos(angle) * radiusX),
-        y: Math.round(centerY + Math.sin(angle) * radiusY),
-      };
-    });
-
-    return { points, stems: [] as Array<[number, number]> };
-  }
-
-  let pairCount = Math.max(2, Math.min(6, Math.floor((extraCount - 1) / 2)));
-  let loopCount = extraCount - pairCount * 2;
-
-  if (loopCount < 2) {
-    pairCount -= 1;
-    loopCount = extraCount - pairCount * 2;
-  }
-
-  const leftStem = Array.from({ length: pairCount }, (_, index) => ({
-    x: 922 + index * 30 + Math.round(rightShift * 0.42),
-    y: 586 + index * 34,
-  }));
-
-  const loopCenterX = 974 + pairCount * 30 + Math.round(rightShift * 0.42);
-  const loopCenterY = 586 + pairCount * 34 + 44;
-  const loop = Array.from({ length: loopCount }, (_, index) => {
-    const angle = Math.PI * 1.02 - (Math.PI * 1.3 * index) / Math.max(1, loopCount - 1);
-    return {
-      x: Math.round(loopCenterX + Math.cos(angle) * 58),
-      y: Math.round(loopCenterY + Math.sin(angle) * 40),
-    };
-  });
-
-  const rightStem = Array.from({ length: pairCount }, (_, index) => ({
-    x: 1028 + (pairCount - 1 - index) * 30 + Math.round(rightShift * 0.42),
-    y: 586 + (pairCount - 1 - index) * 34,
-  }));
-
-  const stems = Array.from({ length: pairCount }, (_, index) => [
-    index,
-    pairCount + loopCount + (pairCount - 1 - index),
-  ] as [number, number]);
-
-  return {
-    points: [...leftStem, ...loop, ...rightStem],
-    stems,
-  };
-}
-
 function buildTrnaTemplate(length: number): RnaTemplate {
-  if (length <= 76) {
-    return {
-      ...TRNA_76_TEMPLATE,
-      length,
-      nucleotides: TRNA_CANONICAL_COORDS.slice(0, length).map((nucleotide, index) => ({
-        pos: index + 1,
-        x: nucleotide.x,
-        y: nucleotide.y,
-      })),
-      stems: TRNA_CANONICAL_STEMS.filter((stem) => stem.from <= length && stem.to <= length),
-    };
-  }
+  const sequence = Array.from({ length }, (_, index) => {
+    if (index === length - 3) {
+      return "C";
+    }
+    if (index === length - 2) {
+      return "C";
+    }
+    if (index === length - 1) {
+      return "A";
+    }
 
-  const extraCount = length - 76;
-  const rightShift = Math.min(220, 28 * extraCount);
-  const insertion = buildVariableArmInsertion(extraCount, rightShift);
-
-  const nucleotides = [
-    ...TRNA_CANONICAL_COORDS.filter((nucleotide) => nucleotide.pos <= 45).map((nucleotide) => ({
-      pos: nucleotide.pos,
-      x: nucleotide.x,
-      y: nucleotide.y,
-    })),
-    ...insertion.points.map((point, index) => ({
-      pos: 46 + index,
-      x: point.x,
-      y: point.y,
-    })),
-    ...TRNA_CANONICAL_COORDS.filter((nucleotide) => nucleotide.pos >= 46).map((nucleotide) => ({
-      pos: shiftCanonicalPosition(nucleotide.pos, extraCount),
-      x: nucleotide.x + (nucleotide.pos >= 49 ? rightShift : Math.round(rightShift * 0.65)),
-      y: nucleotide.y,
-    })),
-  ];
-
-  const stems: RnaStem[] = [
-    ...TRNA_CANONICAL_STEMS.map((stem) => ({
-      from: shiftCanonicalPosition(stem.from, extraCount),
-      to: shiftCanonicalPosition(stem.to, extraCount),
-      style: stem.style,
-    })),
-    ...insertion.stems.map(([leftIndex, rightIndex]) => ({
-      from: 46 + leftIndex,
-      to: 46 + rightIndex,
-      style: undefined,
-    })),
-  ];
+    return "N";
+  });
+  const layout = buildSprinzlTRnaLayout(sequence);
 
   return {
     ...TRNA_76_TEMPLATE,
     length,
-    nucleotides: centerTrnaPoints(nucleotides),
-    stems,
+    nucleotides: layout.mappedPositions,
+    stems: layout.stems,
   };
 }
 
@@ -451,12 +358,65 @@ export function materializeTemplate(
   };
 }
 
+function getRenderableSprinzlNodes(
+  nodes: RnaNucleotide[],
+  showReferenceOverlay: boolean,
+) {
+  if (showReferenceOverlay) {
+    return nodes;
+  }
+
+  return nodes.filter((node) => node.status !== "missing");
+}
+
+function filterStemsToRenderedNodes(stems: RnaStem[], nodes: RnaNucleotide[]) {
+  const renderedPositions = new Set(nodes.map((node) => node.pos));
+
+  return stems.filter(
+    (stem) => renderedPositions.has(stem.from) && renderedPositions.has(stem.to),
+  );
+}
+
+function filterCurrentAnnotationsForNodes(labels: RnaProject["labels"], nodes: RnaNucleotide[]) {
+  const renderedPositions = new Set(nodes.map((node) => node.pos));
+  const maxPosition = Math.max(0, ...renderedPositions);
+
+  return filterCurrentAnnotations(labels, maxPosition).filter((label) =>
+    renderedPositions.has(label.pos),
+  );
+}
+
 export function remapProjectToTemplate(
   project: RnaProject,
   template: RnaTemplate,
 ): RnaProject {
+  if (template.id === "trna_classic") {
+    const layout = buildSprinzlTRnaLayout(project.sequence, {
+      runValidation: project.settings.runSprinzlValidation,
+    });
+    const renderedNodes = getRenderableSprinzlNodes(
+      layout.mappedPositions,
+      project.settings.showSprinzlOverlay,
+    );
+    const renderedStems = filterStemsToRenderedNodes(layout.stems, renderedNodes);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, renderedNodes);
+
+    return {
+      ...project,
+      moleculeType: template.moleculeType,
+      numberingMode: template.numberingMode ?? project.numberingMode,
+      templateId: template.id,
+      nucleotides: renderedNodes,
+      stems: renderedStems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: layout.renderMode,
+      unassignedExtraBases: layout.unassignedExtraBases,
+    };
+  }
+
   const resolvedTemplate = materializeTemplate(template, project.sequence.length);
-  const preservedLabels = project.labels.filter((label) => label.pos <= project.sequence.length);
+  const preservedLabels = filterCurrentAnnotations(project.labels, project.sequence.length);
 
   return {
     ...project,
@@ -471,13 +431,20 @@ export function remapProjectToTemplate(
         base: getDisplayBaseForToken(project.sequence[index] ?? ""),
         x: position.x,
         y: position.y,
+        sequenceIndex: index + 1,
+        originalToken: project.sequence[index],
+        positionLabel: String(position.pos),
+        status: "present" as const,
         visible: previous?.visible ?? true,
         fontSize: previous?.fontSize,
         color: previous?.color,
       };
     }),
     stems: resolvedTemplate.stems ?? [],
-    labels: [...preservedLabels, ...buildAutoSequenceLabels(project.sequence, preservedLabels)],
+    labels: preservedLabels,
+    mappingWarnings: [],
+    renderMode: "standard",
+    unassignedExtraBases: [],
   };
 }
 
@@ -486,9 +453,32 @@ export function syncProjectToSequence(
   nextSequence: string[],
   template: RnaTemplate,
 ): RnaProject {
+  if (template.id === "trna_classic") {
+    const layout = buildSprinzlTRnaLayout(nextSequence, {
+      runValidation: project.settings.runSprinzlValidation,
+    });
+    const renderedNodes = getRenderableSprinzlNodes(
+      layout.mappedPositions,
+      project.settings.showSprinzlOverlay,
+    );
+    const renderedStems = filterStemsToRenderedNodes(layout.stems, renderedNodes);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, renderedNodes);
+
+    return {
+      ...project,
+      sequence: nextSequence,
+      nucleotides: renderedNodes,
+      stems: renderedStems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: layout.renderMode,
+      unassignedExtraBases: layout.unassignedExtraBases,
+    };
+  }
+
   const resolvedTemplate = materializeTemplate(template, nextSequence.length);
   const lastKnown = project.nucleotides.at(-1);
-  const preservedLabels = project.labels.filter((label) => label.pos <= nextSequence.length);
+  const preservedLabels = filterCurrentAnnotations(project.labels, nextSequence.length);
   const preserveCoordinates = project.sequence.length === nextSequence.length;
 
   return {
@@ -507,12 +497,19 @@ export function syncProjectToSequence(
         base: getDisplayBaseForToken(base),
         x: existing?.x ?? fallback.x,
         y: existing?.y ?? fallback.y,
+        sequenceIndex: index + 1,
+        originalToken: base,
+        positionLabel: String(index + 1),
+        status: "present" as const,
         visible: existing?.visible ?? true,
         fontSize: existing?.fontSize,
         color: existing?.color,
       };
     }),
     stems: resolvedTemplate.stems ?? [],
-    labels: [...preservedLabels, ...buildAutoSequenceLabels(nextSequence, preservedLabels)],
+    labels: preservedLabels,
+    mappingWarnings: [],
+    renderMode: "standard",
+    unassignedExtraBases: [],
   };
 }

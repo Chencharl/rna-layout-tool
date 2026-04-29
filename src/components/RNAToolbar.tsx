@@ -18,7 +18,12 @@ type RNAToolbarProps = {
   onApplySecondaryStructure: () => void;
   onReapplyLayout: () => void;
   onToggleSetting: (
-    key: "showPositionNumbers" | "showStemLines",
+    key:
+      | "showPositionNumbers"
+      | "showOnlyModifiedPositions"
+      | "showSprinzlOverlay"
+      | "runSprinzlValidation"
+      | "showStemLines",
     value: boolean,
   ) => void;
   onThemeChange: (value: RnaProject["settings"]["theme"]) => void;
@@ -108,7 +113,7 @@ export function RNAToolbar({
         </label>
 
         <label className="field">
-          <span>Theoretical sequence</span>
+          <span>Sequence</span>
           <textarea
             value={sequenceText}
             onChange={(event) => onSequenceChange(event.target.value)}
@@ -122,7 +127,7 @@ export function RNAToolbar({
         </label>
 
         <label className="field">
-          <span>Vienna secondary structure</span>
+          <span>Dot-bracket secondary structure</span>
           <textarea
             value={secondaryStructureText}
             onChange={(event) => onSecondaryStructureChange(event.target.value)}
@@ -130,11 +135,10 @@ export function RNAToolbar({
             placeholder="((((....))))...."
           />
           <small>
-            Optional dot-bracket input. Applying it replaces the visible stem pairings while
-            keeping the current nucleotide positions editable.
+            Optional dot-bracket input. When provided, it initializes editable pair lines only.
           </small>
           <button type="button" className="ghost-button" onClick={onApplySecondaryStructure}>
-            Apply Vienna Stems
+            Use secondary structure
           </button>
         </label>
       </section>
@@ -152,7 +156,29 @@ export function RNAToolbar({
               onToggleSetting("showPositionNumbers", event.target.checked)
             }
           />
-          <span>Show position numbers for mapping</span>
+          <span>Show positions</span>
+        </label>
+
+        <label className="toggle-field">
+          <input
+            type="checkbox"
+            checked={Boolean(project.settings.showOnlyModifiedPositions)}
+            onChange={(event) =>
+              onToggleSetting("showOnlyModifiedPositions", event.target.checked)
+            }
+          />
+          <span>Show modified positions</span>
+        </label>
+
+        <label className="toggle-field">
+          <input
+            type="checkbox"
+            checked={Boolean(project.settings.showSprinzlOverlay)}
+            onChange={(event) =>
+              onToggleSetting("showSprinzlOverlay", event.target.checked)
+            }
+          />
+          <span>Reference positions</span>
         </label>
 
         <label className="toggle-field">
@@ -161,7 +187,7 @@ export function RNAToolbar({
             checked={project.settings.showStemLines}
             onChange={(event) => onToggleSetting("showStemLines", event.target.checked)}
           />
-          <span>Show stems</span>
+          <span>Show pairing</span>
         </label>
 
         <label className="field">
@@ -175,6 +201,7 @@ export function RNAToolbar({
             <option value="light">Light</option>
             <option value="publication">Publication</option>
             <option value="slides">Slides</option>
+            <option value="base_only">Base only</option>
           </select>
         </label>
 
@@ -215,7 +242,7 @@ export function RNAToolbar({
             Import Project JSON
           </button>
           <button type="button" onClick={onExportProject}>
-            Export Project JSON
+            Export JSON
           </button>
           <button type="button" onClick={() => templateInputRef.current?.click()}>
             Import Template JSON

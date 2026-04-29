@@ -1,68 +1,71 @@
 # RNA Layout Tool
 
-SVG-based RNA figure editor for building publication-ready RNA maps from explicit sequences.
+Publication-focused RNA figure editor for building clean SVG/PNG RNA maps from explicit sequences.
 
-This v1 focuses on a manually editable tRNA cloverleaf workflow: paste a theoretical sequence, start from a scaffold, adjust nucleotide positions directly on the canvas, add modification/adduct labels, optionally apply Vienna dot-bracket stem pairings, and export clean SVG/PNG.
+The current v1 workflow is centered on tRNA cloverleaf figures: paste a sequence, rebuild the scaffold, adjust bases and labels directly on the canvas, edit pair bonds, and export a paper-ready figure.
 
-## Current V1 Features
+## What It Does
 
-- tRNA cloverleaf scaffold with editable nucleotide coordinates.
-- Explicit sequence input with support for custom tokens such as `D`, `*`, `X`, `mG`, and `s4U`.
-- Optional Vienna secondary-structure input for replacing visible stem pairings.
-- Direct canvas manipulation for moving bases, moving labels, and adding points.
-- Position editor for base, coordinate, modification, adduct, and note edits.
-- Canvas label deletion for quick cleanup.
-- Dynamic ladder alignment for selected stem regions.
-- SVG, PNG, and project JSON export.
-- Project JSON import for restoring exact figure states.
+- Draws tRNA layouts from explicit RNA sequences.
+- Uses Sprinzl-style slots for stable tRNA positioning.
+- Supports modified-base tokens such as `Gm`, `m1A`, `s4U`, `D`, `Ψ`, and `X`.
+- Lets you drag bases and labels on the canvas.
+- Lets you add or remove visible pair bonds.
+- Exports clean SVG, PNG, and figure JSON.
 
-## Local Development
+## Run Locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000).
 
 ## Build
+
+This app uses Next.js.
 
 ```bash
 npm run build
 npm run start
 ```
 
-## Recommended Workflow
+The production build is generated in `.next/`.
 
-1. Paste the explicit theoretical RNA sequence.
-2. Choose the closest layout scaffold.
-3. Rebuild the scaffold if the sequence length changes.
-4. Use the canvas to manually polish nucleotide positions and labels.
-5. Use `Align Selected Ladder` when a stem/laddder needs to be re-parallelized.
-6. Add modification, adduct, and note labels from the position editor.
-7. Export SVG for publication/slide editing or PNG for quick sharing.
+## Deploy To Vercel
 
-## V1 Scope Notes
+Vercel can deploy this repository directly from GitHub.
 
-- The sequence is treated as the source of truth, but nucleotide coordinates are explicit project data so manual edits can be preserved.
-- Position numbers are hidden by default because some tRNA structural positions are optional or family-specific.
-- For length changes, the scaffold is regenerated from the current template instead of stretching old coordinates.
-- Vienna dot-bracket input controls visible base-pairing stems; it does not override manually edited coordinates.
+1. Push the repository to GitHub.
+2. Import the repository in Vercel.
+3. Keep the default Next.js settings.
+4. Vercel will run `npm run build` automatically.
 
-## Roadmap
+The included `vercel.json` pins the framework to Next.js and uses `.next` as the build output directory.
 
-- Independent colors for D loop, T loop, anticodon loop, variable loop, and stems.
-- Freeform-like infinite canvas panning and continuous zoom.
-- More stable loop-aware deformation when dragging a single point.
-- Better family-specific tRNA templates, including variable-loop-specific layouts.
-- R2DT/RNAcanvas-inspired import and editing flows.
-- mRNA, rRNA, miRNA, and other RNA layout presets.
+## Export Figures
+
+- Use `Export SVG` for publication, Illustrator, PowerPoint, or manuscript workflows.
+- Use `Export PNG` for quick sharing.
+- Use `Export JSON` to save the sequence, slot mapping, pair edges, and modifications.
+
+SVG export is intended to be clean: no debug axes, no hidden nodes, and no temporary layout artifacts.
 
 ## Project Structure
 
 ```text
-src/app/               Next.js app entry and global styles
-src/components/        RNA editor UI, canvas, toolbar, inspector, table
-src/lib/               RNA data model, templates, validation, import/export, sequence parsing
+src/app/          Next.js app entry and global styles
+src/components/   Editor UI, toolbar, inspector, and SVG canvas
+src/lib/          RNA model, Sprinzl slot mapping, layout, parsing, and export helpers
+scripts/          Structural regression tests
 ```
 
+## Scripts
+
+```bash
+npm run dev             # start local development server
+npm run build           # create production Next.js build
+npm run start           # serve production build locally
+npm run test:structure  # run renderer/layout regression tests
+```
