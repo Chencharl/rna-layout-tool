@@ -40,6 +40,7 @@ export function serializeFigureData(project: RnaProject): string {
           slot: nucleotide.positionLabel ?? nucleotide.sprinzlLabel ?? nucleotide.pos.toString(),
           type: nucleotide.modification,
         })),
+      annotations: project.annotations,
     },
     null,
     2,

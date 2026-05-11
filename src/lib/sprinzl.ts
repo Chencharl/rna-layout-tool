@@ -1,4 +1,5 @@
-import { getCatalogItem, getDisplayBaseForToken } from "./biology";
+import { parseSequenceWithModifications, type ParsedSequenceToken } from "./annotations";
+import { buildSprinzlGeometry, SPRINZL_SLOT_ORDER_INDEX } from "./geometry";
 import { parseDotBracketStructure } from "./structureLayout";
 import type { RnaNucleotide, RnaPairStatus, RnaRenderMode, RnaStem } from "./types";
 
@@ -17,7 +18,6 @@ type Slot = {
   region: SlotRegion;
   x: number;
   y: number;
-  pairingPartner?: string;
   enabled: boolean;
   occupied: boolean;
   base: string | null;
@@ -26,16 +26,9 @@ type Slot = {
   sequenceIndex?: number;
 };
 
-type ParsedToken = {
-  token: string;
-  base: string;
-  modification: string | null;
-  isUnknownModification: boolean;
-};
-
 type CcaTailMap = {
   startIndex: number;
-  assignments: Array<{ slotId: "74" | "75" | "76"; sequenceIndex: number }>;
+  assignments: Array<{ slotId: "74" | "75" | "76"; parsedIndex: number }>;
   status: "full" | "partial" | "missing";
 };
 
@@ -47,8 +40,6 @@ export type SprinzlLayoutResult = {
   stems: RnaStem[];
 };
 
-const STEP = 40;
-const GAP = 80;
 const VARIABLE_STEM_CAPACITY = 7;
 const VARIABLE_LOOP_CAPACITY = 5;
 
@@ -76,7 +67,6 @@ const D_CORE = [
   "25",
   "26",
 ];
-const D_INSERTIONS = ["17a", "17b", "20a", "20b"];
 const ANTICODON_CORE = [
   "27",
   "28",
@@ -121,7 +111,6 @@ const T_CORE = [
   "64",
   "65",
 ];
-const TAIL = ["74", "75", "76"];
 
 const CANONICAL_PAIR_IDS: Array<[string, string]> = [
   ["1", "72"],
@@ -154,116 +143,134 @@ const CANONICAL_PAIR_IDS: Array<[string, string]> = [
   ["e17", "e27"],
 ];
 
-const SPRINZL_SLOT_ORDER = [
-  ...ACCEPTOR_5,
-  "8",
-  "9",
-  "10",
-  "11",
-  "12",
-  "13",
-  "14",
-  "15",
-  "16",
-  "17",
-  "17a",
-  "17b",
-  "18",
-  "19",
-  "20",
-  "20a",
-  "20b",
-  "21",
-  "22",
-  "23",
-  "24",
-  "25",
-  "26",
-  ...ANTICODON_CORE,
-  ...VARIABLE_BRIDGE_5,
-  ...VARIABLE_CLASS_I_LOOP,
-  ...VARIABLE_STEM_5,
-  ...VARIABLE_E_LOOP,
-  ...VARIABLE_STEM_3,
-  ...VARIABLE_BRIDGE_3,
-  ...T_CORE,
-  ...ACCEPTOR_3,
-  "73",
-  ...TAIL,
-];
-
-const SPRINZL_SLOT_ORDER_INDEX = new Map(
-  SPRINZL_SLOT_ORDER.map((slotId, index) => [slotId, index]),
-);
-
-const VARIABLE_ARM_COORDINATES = [
-  { id: "e11", x: 790, y: 548 },
-  { id: "e12", x: 830, y: 575 },
-  { id: "e13", x: 870, y: 602 },
-  { id: "e14", x: 910, y: 629 },
-  { id: "e15", x: 950, y: 656 },
-  { id: "e16", x: 990, y: 683 },
-  { id: "e17", x: 1030, y: 710 },
-  { id: "e1", x: 1050, y: 748 },
-  { id: "e2", x: 1085, y: 772 },
-  { id: "e3", x: 1127, y: 760 },
-  { id: "e4", x: 1150, y: 722 },
-  { id: "e5", x: 1128, y: 684 },
-  { id: "e27", x: 1052, y: 672 },
-  { id: "e26", x: 1012, y: 645 },
-  { id: "e25", x: 972, y: 618 },
-  { id: "e24", x: 932, y: 591 },
-  { id: "e23", x: 892, y: 564 },
-  { id: "e22", x: 852, y: 537 },
-  { id: "e21", x: 812, y: 510 },
-];
-const CLASS_I_VARIABLE_COORDINATES = [
-  { id: "v1", x: 760, y: 540 },
-  { id: "v2", x: 790, y: 570 },
-  { id: "v3", x: 825, y: 560 },
-  { id: "v4", x: 840, y: 525 },
-  { id: "v5", x: 807, y: 505 },
-];
-
-function arcSlots(
-  labels: string[],
+function placeArc(
+  slots: Map<string, Slot>,
+  slotIds: string[],
   center: { x: number; y: number },
   radius: { x: number; y: number },
   startDegrees: number,
   endDegrees: number,
 ) {
-  return labels.map((id, index) => {
-    const fraction = labels.length <= 1 ? 0 : index / (labels.length - 1);
+  const occupiedIds = slotIds.filter((slotId) => slots.get(slotId)?.occupied);
+
+  occupiedIds.forEach((slotId, index) => {
+    const slot = slots.get(slotId);
+    if (!slot) {
+      return;
+    }
+
+    const fraction = occupiedIds.length <= 1 ? 0 : index / (occupiedIds.length - 1);
     const degrees = startDegrees + (endDegrees - startDegrees) * fraction;
     const radians = (degrees * Math.PI) / 180;
 
-    return {
-      id,
-      x: Math.round(center.x + Math.cos(radians) * radius.x),
-      y: Math.round(center.y + Math.sin(radians) * radius.y),
-    };
+    slot.x = Math.round(center.x + Math.cos(radians) * radius.x);
+    slot.y = Math.round(center.y + Math.sin(radians) * radius.y);
   });
 }
 
-function horizontalStemSlots(leftLabels: string[], rightLabels: string[], x: number, y: number) {
-  return [
-    ...leftLabels.map((id, index) => ({ id, x, y: y + index * STEP })),
-    ...rightLabels.map((id, index) => ({ id, x: x + GAP, y: y + index * STEP })),
-  ];
+function placeDynamicDLoop(slots: Map<string, Slot>) {
+  placeArc(
+    slots,
+    ["14", "15", "16", "17", "17a", "17b", "18", "19", "20", "20a", "20b", "21"],
+    { x: 270, y: 445 },
+    { x: 96, y: 80 },
+    -58,
+    -302,
+  );
 }
 
-function verticalStemSlots(
-  topLabels: string[],
-  bottomLabels: string[],
-  x: number,
-  y: number,
-  pitch = STEP,
-  gap = GAP,
-) {
-  return [
-    ...topLabels.map((id, index) => ({ id, x: x + index * pitch, y })),
-    ...bottomLabels.map((id, index) => ({ id, x: x + index * pitch, y: y + gap })),
+function occupiedSlotIds(slots: Map<string, Slot>, slotIds: string[]) {
+  return slotIds.filter((slotId) => slots.get(slotId)?.occupied);
+}
+
+function setSlotPoint(slots: Map<string, Slot>, slotId: string, point: { x: number; y: number }) {
+  const slot = slots.get(slotId);
+  if (!slot) {
+    return;
+  }
+
+  slot.x = Math.round(point.x);
+  slot.y = Math.round(point.y);
+}
+
+function placeClassIVariableLoop(slots: Map<string, Slot>) {
+  placeArc(
+    slots,
+    VARIABLE_CLASS_I_LOOP,
+    { x: 800, y: 536 },
+    { x: 48, y: 42 },
+    170,
+    -10,
+  );
+}
+
+function placeClassIIVariableArm(slots: Map<string, Slot>) {
+  const fivePrimeStem = occupiedSlotIds(slots, VARIABLE_STEM_5);
+  const loop = occupiedSlotIds(slots, VARIABLE_E_LOOP);
+  const threePrimeStem = occupiedSlotIds(slots, VARIABLE_STEM_3);
+  const pairCount = Math.min(fivePrimeStem.length, threePrimeStem.length);
+
+  if (pairCount === 0) {
+    return;
+  }
+
+  const stemStart = { x: 790, y: 548 };
+  const stemStep = { x: 40, y: 34 };
+  const pairOffset = { x: 80, y: -52 };
+
+  fivePrimeStem.forEach((slotId, index) => {
+    setSlotPoint(slots, slotId, {
+      x: stemStart.x + stemStep.x * index,
+      y: stemStart.y + stemStep.y * index,
+    });
+  });
+
+  threePrimeStem.forEach((slotId, index) => {
+    const reverseIndex = pairCount - 1 - index;
+    setSlotPoint(slots, slotId, {
+      x: stemStart.x + stemStep.x * reverseIndex + pairOffset.x,
+      y: stemStart.y + stemStep.y * reverseIndex + pairOffset.y,
+    });
+  });
+
+  if (loop.length === 0) {
+    return;
+  }
+
+  const distalFivePrime = {
+    x: stemStart.x + stemStep.x * (pairCount - 1),
+    y: stemStart.y + stemStep.y * (pairCount - 1),
+  };
+  const loopTemplate = [
+    { x: 48, y: 42 },
+    { x: 86, y: 58 },
+    { x: 122, y: 50 },
+    { x: 145, y: 8 },
+    { x: 122, y: -30 },
   ];
+
+  loop.forEach((slotId, index) => {
+    const templateIndex =
+      loop.length === 1
+        ? Math.floor(loopTemplate.length / 2)
+        : Math.round((index / (loop.length - 1)) * (loopTemplate.length - 1));
+    const offset = loopTemplate[templateIndex];
+
+    setSlotPoint(slots, slotId, {
+      x: distalFivePrime.x + offset.x,
+      y: distalFivePrime.y + offset.y,
+    });
+  });
+}
+
+function compactOccupiedLoops(slots: Map<string, Slot>, variableMode: "none" | "classI" | "classII") {
+  placeDynamicDLoop(slots);
+
+  if (variableMode === "classI") {
+    placeClassIVariableLoop(slots);
+  } else if (variableMode === "classII") {
+    placeClassIIVariableArm(slots);
+  }
 }
 
 function getSlotRegion(id: string): SlotRegion {
@@ -373,96 +380,54 @@ function createSlot(id: string, x: number, y: number, index: number): Slot {
 }
 
 function initializeSlots() {
-  const rawCoordinates = [
-    ...horizontalStemSlots(["1", "2", "3", "4", "5", "6", "7"], ["72", "71", "70", "69", "68", "67", "66"], 600, 100),
-    { id: "8", x: 555, y: 360 },
-    { id: "9", x: 520, y: 385 },
-    ...verticalStemSlots(["13", "12", "11", "10"], ["22", "23", "24", "25"], 365, 405),
-    ...arcSlots(["14", "15", "16", "17", "17a", "17b", "18", "19", "20", "20a", "20b", "21"], { x: 270, y: 445 }, { x: 106, y: 82 }, -58, -302),
-    { id: "26", x: 535, y: 505 },
-    ...horizontalStemSlots(["27", "28", "29", "30", "31"], ["43", "42", "41", "40", "39"], 580, 560),
-    ...arcSlots(["32", "33", "34", "35", "36", "37", "38"], { x: 620, y: 730 }, { x: 80, y: 82 }, 160, 20),
-    { id: "44", x: 700, y: 535 },
-    { id: "45", x: 735, y: 510 },
-    ...CLASS_I_VARIABLE_COORDINATES,
-    ...VARIABLE_ARM_COORDINATES,
-    { id: "46", x: 770, y: 530 },
-    { id: "47", x: 790, y: 570 },
-    { id: "48", x: 800, y: 500 },
-    ...verticalStemSlots(["65", "64", "63", "62", "61"], ["49", "50", "51", "52", "53"], 760, 370),
-    ...arcSlots(["54", "55", "56", "57", "58", "59", "60"], { x: 960, y: 410 }, { x: 90, y: 78 }, 100, -100),
-    { id: "73", x: 720, y: 80 },
-    { id: "74", x: 760, y: 62 },
-    { id: "75", x: 800, y: 54 },
-    { id: "76", x: 840, y: 54 },
-  ];
+  const rawCoordinates = [...buildSprinzlGeometry().values()];
   const slots = new Map<string, Slot>();
 
   rawCoordinates.forEach((coordinate, index) => {
     slots.set(coordinate.id, createSlot(coordinate.id, coordinate.x, coordinate.y, index));
   });
 
-  CANONICAL_PAIR_IDS.forEach(([leftId, rightId]) => {
-    const left = slots.get(leftId);
-    const right = slots.get(rightId);
-    if (left && right) {
-      left.pairingPartner = rightId;
-      right.pairingPartner = leftId;
-    }
-  });
-
   return slots;
 }
 
-function parseToken(token: string): ParsedToken {
-  const normalized = token.trim();
-  const isPlainBase = /^[ACGUTN]$/i.test(normalized);
-  const base = getDisplayBaseForToken(normalized);
-  const modification = isPlainBase || !normalized ? null : normalized;
-
-  return {
-    token,
-    base,
-    modification,
-    isUnknownModification:
-      typeof modification === "string" &&
-      !["D", "Y", "Q", "I", "X", "*"].includes(modification) &&
-      !getCatalogItem(modification),
-  };
-}
-
-function getCcaTailMap(tokens: ParsedToken[]): CcaTailMap {
+function getCcaTailMap(tokens: ParsedSequenceToken[]): CcaTailMap {
   const bases = tokens.map((token) => token.base.toUpperCase());
   const joined = bases.join("");
 
-  if (joined.endsWith("CCA")) {
+  if (tokens.length >= 3) {
+    const status = joined.endsWith("CCA")
+      ? "full"
+      : joined.endsWith("CA") || joined.endsWith("A")
+        ? "partial"
+        : "missing";
+
     return {
       startIndex: tokens.length - 3,
       assignments: [
-        { slotId: "74", sequenceIndex: tokens.length - 2 },
-        { slotId: "75", sequenceIndex: tokens.length - 1 },
-        { slotId: "76", sequenceIndex: tokens.length },
+        { slotId: "74", parsedIndex: tokens.length - 3 },
+        { slotId: "75", parsedIndex: tokens.length - 2 },
+        { slotId: "76", parsedIndex: tokens.length - 1 },
       ],
-      status: "full",
+      status,
     };
   }
 
-  if (joined.endsWith("CA")) {
+  if (tokens.length === 2) {
     return {
-      startIndex: tokens.length - 2,
+      startIndex: 0,
       assignments: [
-        { slotId: "75", sequenceIndex: tokens.length - 1 },
-        { slotId: "76", sequenceIndex: tokens.length },
+        { slotId: "75", parsedIndex: 0 },
+        { slotId: "76", parsedIndex: 1 },
       ],
-      status: "partial",
+      status: joined === "CA" ? "partial" : "missing",
     };
   }
 
-  if (joined.endsWith("A")) {
+  if (tokens.length === 1) {
     return {
-      startIndex: tokens.length - 1,
-      assignments: [{ slotId: "76", sequenceIndex: tokens.length }],
-      status: "partial",
+      startIndex: 0,
+      assignments: [{ slotId: "76", parsedIndex: 0 }],
+      status: joined === "A" ? "partial" : "missing",
     };
   }
 
@@ -476,7 +441,7 @@ function getCcaTailMap(tokens: ParsedToken[]): CcaTailMap {
 function occupySlot(
   slots: Map<string, Slot>,
   id: string,
-  parsedToken: ParsedToken,
+  parsedToken: ParsedSequenceToken,
   sequenceIndex: number,
 ) {
   const slot = slots.get(id);
@@ -495,7 +460,7 @@ function occupySlot(
 function occupySlotsFromStart(
   slots: Map<string, Slot>,
   slotIds: string[],
-  entries: Array<{ parsedToken: ParsedToken; sequenceIndex: number }>,
+  entries: Array<{ parsedToken: ParsedSequenceToken; sequenceIndex: number }>,
 ) {
   const remaining = [...entries];
 
@@ -514,7 +479,7 @@ function occupySlotsFromStart(
 function occupySlotsFromEnd(
   slots: Map<string, Slot>,
   slotIds: string[],
-  entries: Array<{ parsedToken: ParsedToken; sequenceIndex: number }>,
+  entries: Array<{ parsedToken: ParsedSequenceToken; sequenceIndex: number }>,
 ) {
   const remaining = [...entries];
 
@@ -568,25 +533,7 @@ function applyDependencyRules(slots: Map<string, Slot>, variableMode: "none" | "
   }
 }
 
-function getPairStatus(left: string, right: string): RnaPairStatus {
-  const pair = `${left.toUpperCase()}-${right.toUpperCase()}`;
-
-  if (["A-U", "U-A", "G-C", "C-G"].includes(pair)) {
-    return "normal";
-  }
-
-  if (pair === "G-U" || pair === "U-G") {
-    return "wobble";
-  }
-
-  return "mismatch";
-}
-
-function getRenderMode(sequenceLength: number, variableMode: "none" | "classI" | "classII", runValidation?: boolean): RnaRenderMode {
-  if (runValidation) {
-    return "sprinzl_validation";
-  }
-
+function getRenderMode(sequenceLength: number, variableMode: "none" | "classI" | "classII"): RnaRenderMode {
   if (sequenceLength < 71) {
     return "short_atypical";
   }
@@ -637,88 +584,80 @@ function buildClassIVariableSlotIds(variableCount: number) {
   return VARIABLE_CLASS_I_LOOP.slice(0, Math.min(variableCount, VARIABLE_LOOP_CAPACITY));
 }
 
-function setSlotPoint(slots: Map<string, Slot>, slotId: string, point: { x: number; y: number }) {
-  const slot = slots.get(slotId);
+function getPairStatus(left: string | null, right: string | null): RnaPairStatus {
+  const pair = `${left?.toUpperCase() ?? ""}-${right?.toUpperCase() ?? ""}`;
 
-  if (!slot) {
-    return;
+  if (["A-U", "U-A", "G-C", "C-G"].includes(pair)) {
+    return "normal";
   }
 
-  slot.x = Math.round(point.x);
-  slot.y = Math.round(point.y);
+  if (pair === "G-U" || pair === "U-G") {
+    return "wobble";
+  }
+
+  return "mismatch";
 }
 
-function repositionOccupiedVariableArm(slots: Map<string, Slot>) {
-  const fivePrimeStem = VARIABLE_STEM_5.filter((slotId) => slots.get(slotId)?.occupied);
-  const loopSlots = VARIABLE_E_LOOP.filter((slotId) => slots.get(slotId)?.occupied);
-  const pairCount = fivePrimeStem.length;
+function makeStem(left: Slot, right: Slot): RnaStem {
+  const pairStatus = getPairStatus(left.base, right.base);
 
-  if (pairCount === 0) {
-    return;
-  }
-
-  const start = { x: 790, y: 548 };
-  const delta = { x: 52, y: 38 };
-  const partnerOffset = { x: 26, y: -42 };
-
-  fivePrimeStem.forEach((slotId, index) => {
-    setSlotPoint(slots, slotId, {
-      x: start.x + delta.x * index,
-      y: start.y + delta.y * index,
-    });
-  });
-
-  const partnerIds = Array.from({ length: pairCount }, (_, index) => `e2${index + 1}`);
-  partnerIds.forEach((slotId, index) => {
-    setSlotPoint(slots, slotId, {
-      x: start.x + partnerOffset.x + delta.x * index,
-      y: start.y + partnerOffset.y + delta.y * index,
-    });
-  });
-
-  const distalFivePrime = slots.get(fivePrimeStem.at(-1) ?? "");
-  const distalThreePrime = slots.get(partnerIds.at(-1) ?? "");
-
-  if (distalFivePrime && distalThreePrime && loopSlots.length > 0) {
-    const center = {
-      x: (distalFivePrime.x + distalThreePrime.x) / 2 + 88,
-      y: (distalFivePrime.y + distalThreePrime.y) / 2,
-    };
-    const radius = { x: 72, y: 54 };
-    const angles = loopSlots.length === 1
-      ? [0]
-      : loopSlots.map((_, index) => 125 + (-250 * index) / (loopSlots.length - 1));
-
-    loopSlots.forEach((slotId, index) => {
-      const radians = (angles[index] * Math.PI) / 180;
-      setSlotPoint(slots, slotId, {
-        x: center.x + Math.cos(radians) * radius.x,
-        y: center.y + Math.sin(radians) * radius.y,
-      });
-    });
-  }
+  return {
+    from: left.pos,
+    to: right.pos,
+    pairStatus,
+    style: pairStatus === "mismatch" ? "dashed" : undefined,
+  };
 }
 
-function repositionClassIVariableLoop(slots: Map<string, Slot>) {
-  const loopSlots = VARIABLE_CLASS_I_LOOP.filter((slotId) => slots.get(slotId)?.occupied);
+function buildCanonicalStems(slots: Map<string, Slot>) {
+  return CANONICAL_PAIR_IDS.flatMap(([leftId, rightId]) => {
+    const left = slots.get(leftId);
+    const right = slots.get(rightId);
 
-  if (loopSlots.length === 0) {
-    return;
+    if (!left?.occupied || !right?.occupied) {
+      return [];
+    }
+
+    return [makeStem(left, right)];
+  });
+}
+
+function buildDotBracketStems(
+  dotBracket: string,
+  sequenceLength: number,
+  nodes: RnaNucleotide[],
+): { stems: RnaStem[]; warnings: string[] } {
+  const parsed = parseDotBracketStructure(dotBracket, sequenceLength);
+  if (parsed.error) {
+    return { stems: [], warnings: [parsed.error] };
   }
 
-  const center = { x: 800, y: 542 };
-  const radius = { x: 58, y: 44 };
-  const angles = loopSlots.length === 1
-    ? [0]
-    : loopSlots.map((_, index) => 150 + (-300 * index) / (loopSlots.length - 1));
+  const nodeBySequenceIndex = new Map(
+    nodes
+      .filter((node) => node.sequenceIndex !== undefined)
+      .map((node) => [node.sequenceIndex as number, node]),
+  );
 
-  loopSlots.forEach((slotId, index) => {
-    const radians = (angles[index] * Math.PI) / 180;
-    setSlotPoint(slots, slotId, {
-      x: center.x + Math.cos(radians) * radius.x,
-      y: center.y + Math.sin(radians) * radius.y,
-    });
+  const stems = parsed.pairs.flatMap((pair) => {
+    const left = nodeBySequenceIndex.get(pair.i);
+    const right = nodeBySequenceIndex.get(pair.j);
+
+    if (!left || !right) {
+      return [];
+    }
+
+    const pairStatus = getPairStatus(left.base, right.base);
+    return [
+      {
+        from: left.pos,
+        to: right.pos,
+        pairStatus,
+        style: pairStatus === "mismatch" ? ("dashed" as const) : undefined,
+      },
+    ];
   });
+
+  return { stems, warnings: [] };
 }
 
 function slotToNode(slot: Slot): RnaNucleotide {
@@ -743,147 +682,40 @@ function slotToNode(slot: Slot): RnaNucleotide {
   };
 }
 
-function buildSlotPairs(
-  slots: Map<string, Slot>,
-  nodesBySlotId: Map<string, RnaNucleotide>,
-  sequenceIndexToSlotId: Map<number, string>,
-  sequenceLength: number,
-  runValidation?: boolean,
-  dotBracket?: string,
-) {
-  const warnings: string[] = [];
-  const stems: RnaStem[] = [];
-  const addPair = (leftSlotId: string, rightSlotId: string) => {
-    const leftSlot = slots.get(leftSlotId);
-    const rightSlot = slots.get(rightSlotId);
-    const left = nodesBySlotId.get(leftSlotId);
-    const right = nodesBySlotId.get(rightSlotId);
-
-    if (!leftSlot?.occupied || !rightSlot?.occupied || !left || !right) {
-      return;
-    }
-
-    const pairStatus = getPairStatus(leftSlot.base ?? "", rightSlot.base ?? "");
-    left.pairingPartner = rightSlotId;
-    right.pairingPartner = leftSlotId;
-    left.pairStatus = pairStatus;
-    right.pairStatus = pairStatus;
-    if (runValidation && pairStatus === "mismatch") {
-      left.status = "mismatch";
-      right.status = "mismatch";
-      warnings.push(`stem mismatch ${leftSlotId}-${rightSlotId}`);
-    }
-    stems.push({
-      from: left.pos,
-      to: right.pos,
-      pairStatus,
-      style: pairStatus === "mismatch" ? "dashed" : undefined,
-    });
-  };
-
-  if (dotBracket?.trim()) {
-    const parsed = parseDotBracketStructure(dotBracket, sequenceLength);
-
-    if (parsed.error) {
-      warnings.push(parsed.error);
-      return { stems, warnings };
-    }
-
-    parsed.pairs.forEach((pair) => {
-      const leftSlotId = sequenceIndexToSlotId.get(pair.i);
-      const rightSlotId = sequenceIndexToSlotId.get(pair.j);
-
-      if (!leftSlotId || !rightSlotId) {
-        return;
-      }
-
-      addPair(leftSlotId, rightSlotId);
-    });
-
-    return { stems, warnings };
-  }
-
-  CANONICAL_PAIR_IDS.forEach(([leftId, rightId]) => addPair(leftId, rightId));
-  return { stems, warnings };
-}
-
 export function buildSprinzlTRnaLayout(
   sequence: string[],
   options: { runValidation?: boolean; dotBracket?: string } = {},
 ): SprinzlLayoutResult {
   const warnings: string[] = [];
-  const parsedTokens = sequence.map(parseToken);
+  const parsedTokens = parseSequenceWithModifications(sequence);
   const slots = initializeSlots();
   const tailMap = getCcaTailMap(parsedTokens);
-  const sequenceIndexToSlotId = new Map<number, string>();
-
-  parsedTokens.forEach((parsedToken, index) => {
-    if (parsedToken.isUnknownModification) {
-      warnings.push(`unknown modified base ${parsedToken.token.trim()}`);
-    }
-  });
 
   tailMap.assignments.forEach((assignment) => {
-    const parsedToken = parsedTokens[assignment.sequenceIndex - 1];
-    if (parsedToken && occupySlot(slots, assignment.slotId, parsedToken, assignment.sequenceIndex)) {
-      sequenceIndexToSlotId.set(assignment.sequenceIndex, assignment.slotId);
+    const parsedToken = parsedTokens[assignment.parsedIndex];
+    if (parsedToken) {
+      occupySlot(slots, assignment.slotId, parsedToken, parsedToken.sequenceIndex);
     }
   });
 
   let remaining = parsedTokens
     .slice(0, tailMap.startIndex)
-    .map((parsedToken, index) => ({
+    .map((parsedToken) => ({
       parsedToken,
-      sequenceIndex: index + 1,
+      sequenceIndex: parsedToken.sequenceIndex,
     }));
 
   remaining = occupySlotsFromStart(slots, ACCEPTOR_5, remaining);
-  ACCEPTOR_5.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   remaining = occupySlotsFromEnd(slots, ACCEPTOR_RIGHT_TO_LEFT, remaining);
-  ACCEPTOR_RIGHT_TO_LEFT.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   remaining = occupySlotsFromEnd(slots, T_CORE, remaining);
-  T_CORE.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   remaining = occupySlotsFromStart(slots, D_CORE, remaining);
-  D_CORE.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   remaining = occupySlotsFromStart(slots, ANTICODON_CORE, remaining);
-  ANTICODON_CORE.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   remaining = occupySlotsFromStart(slots, VARIABLE_BRIDGE_5, remaining);
-  VARIABLE_BRIDGE_5.forEach((slotId) => {
-    const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-    if (sequenceIndex !== undefined) {
-      sequenceIndexToSlotId.set(sequenceIndex, slotId);
-    }
-  });
 
   const variableCount = Math.max(0, remaining.length - VARIABLE_BRIDGE_3.length);
   const variableMode =
@@ -894,7 +726,7 @@ export function buildSprinzlTRnaLayout(
       : variableMode === "classI"
         ? buildClassIVariableSlotIds(variableCount)
         : [];
-  const unassignedEntries: Array<{ parsedToken: ParsedToken; sequenceIndex: number }> = [];
+  const unassignedEntries: Array<{ parsedToken: ParsedSequenceToken; sequenceIndex: number }> = [];
 
   if (variableMode === "classII" || variableMode === "classI") {
     for (const slotId of [...variableSlots, ...VARIABLE_BRIDGE_3]) {
@@ -903,24 +735,15 @@ export function buildSprinzlTRnaLayout(
         break;
       }
 
-      if (occupySlot(slots, slotId, entry.parsedToken, entry.sequenceIndex)) {
-        sequenceIndexToSlotId.set(entry.sequenceIndex, slotId);
-      }
+      occupySlot(slots, slotId, entry.parsedToken, entry.sequenceIndex);
     }
   } else {
     remaining = occupySlotsFromEnd(slots, VARIABLE_BRIDGE_3, remaining);
-    VARIABLE_BRIDGE_3.forEach((slotId) => {
-      const sequenceIndex = slots.get(slotId)?.sequenceIndex;
-      if (sequenceIndex !== undefined) {
-        sequenceIndexToSlotId.set(sequenceIndex, slotId);
-      }
-    });
   }
 
   remaining.forEach((entry) => unassignedEntries.push(entry));
   applyDependencyRules(slots, variableMode);
-  repositionClassIVariableLoop(slots);
-  repositionOccupiedVariableArm(slots);
+  compactOccupiedLoops(slots, variableMode);
 
   if (tailMap.status === "missing") {
     warnings.push("missing CCA tail");
@@ -948,20 +771,16 @@ export function buildSprinzlTRnaLayout(
       const rightOrder = right.slotOrder ?? Number.MAX_SAFE_INTEGER;
       return leftOrder - rightOrder || left.pos - right.pos;
     });
-  const nodesBySlotId = new Map(allNodes.map((node) => [node.positionLabel ?? String(node.pos), node]));
-  const pairResult = buildSlotPairs(
-    slots,
-    nodesBySlotId,
-    sequenceIndexToSlotId,
-    sequence.length,
-    options.runValidation,
-    options.dotBracket,
-  );
+  const dotBracketResult = options.dotBracket?.trim()
+    ? buildDotBracketStems(options.dotBracket, sequence.length, allNodes)
+    : null;
+  const stems = dotBracketResult?.stems ?? buildCanonicalStems(slots);
+
   return {
     mappedPositions: allNodes,
-    warnings: Array.from(new Set([...warnings, ...pairResult.warnings])),
+    warnings: Array.from(new Set([...warnings, ...(dotBracketResult?.warnings ?? [])])),
     unassignedExtraBases: unassignedEntries.map((entry) => entry.parsedToken.token),
-    renderMode: getRenderMode(sequence.length, variableMode, options.runValidation),
-    stems: pairResult.stems,
+    renderMode: getRenderMode(sequence.length, variableMode),
+    stems,
   };
 }

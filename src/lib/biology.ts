@@ -1,4 +1,5 @@
 import type { AnnotationSource, MarkCatalogItem, PositionMarkRule, RnaLabel, RnaNucleotide } from "./types";
+import { resolveModificationToken } from "./modificationMapping";
 
 export const MODIFICATION_CATALOG: MarkCatalogItem[] = [
   { symbol: "Y", name: "pseudouridine", color: "#475569", kind: "modification", source: "mod_bank" },
@@ -97,9 +98,14 @@ const AUTO_LABEL_COLOR: Record<string, string> = {
 
 export function getDisplayBaseForToken(token: string): string {
   const normalized = token.trim();
+  const mapped = resolveModificationToken(normalized);
 
   if (!normalized) {
     return "";
+  }
+
+  if (mapped) {
+    return mapped.base;
   }
 
   if (/^[ACGUTN]$/i.test(normalized)) {

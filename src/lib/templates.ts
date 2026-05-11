@@ -1,7 +1,8 @@
 import {
   filterCurrentAnnotations,
-  getDisplayBaseForToken,
 } from "./biology";
+import { getRenderableBase } from "./annotations";
+import { buildRrna5SLayout, RRNA_5S_TEMPLATE_ROWS } from "./rrna5s";
 import { buildSprinzlTRnaLayout } from "./sprinzl";
 import type { RnaNucleotide, RnaProject, RnaStem, RnaTemplate } from "./types";
 
@@ -143,29 +144,7 @@ function buildCanonicalTrnaCoords(): TrnaPoint[] {
 
 const TRNA_CANONICAL_COORDS = buildCanonicalTrnaCoords();
 
-const TRNA_CANONICAL_STEMS: RnaStem[] = [
-  { from: 1, to: 72 },
-  { from: 2, to: 71 },
-  { from: 3, to: 70 },
-  { from: 4, to: 69 },
-  { from: 5, to: 68 },
-  { from: 6, to: 67 },
-  { from: 7, to: 66 },
-  { from: 10, to: 25 },
-  { from: 11, to: 24 },
-  { from: 12, to: 23 },
-  { from: 13, to: 22 },
-  { from: 27, to: 43 },
-  { from: 28, to: 42 },
-  { from: 29, to: 41 },
-  { from: 30, to: 40 },
-  { from: 31, to: 39 },
-  { from: 49, to: 65 },
-  { from: 50, to: 64 },
-  { from: 51, to: 63 },
-  { from: 52, to: 62 },
-  { from: 53, to: 61 },
-];
+const TRNA_CANONICAL_STEMS: RnaStem[] = [];
 
 const TRNA_76_TEMPLATE: RnaTemplate = {
   id: "trna_classic",
@@ -195,13 +174,25 @@ const MIRNA_HAIRPIN_TEMPLATE: RnaTemplate = {
   stems: [],
 };
 
-const RRNA_COMPACT_TEMPLATE: RnaTemplate = {
-  id: "rrna_compact",
-  name: "rRNA Compact Fold",
+const RRNA_5S_TEMPLATE: RnaTemplate = {
+  id: "rrna_5s_secondary_structure",
+  name: "rRNA 5S Secondary Structure",
   moleculeType: "rRNA",
+  length: 120,
   numberingMode: "raw",
-  nucleotides: [],
-  stems: [],
+  nucleotides: RRNA_5S_TEMPLATE_ROWS.map((row) => ({
+    pos: row.position,
+    base: row.base,
+    x: row.x,
+    y: row.y,
+    positionLabel: row.label,
+    region: row.region,
+  })),
+  stems: RRNA_5S_TEMPLATE_ROWS.flatMap((row) =>
+    row.paired_with && row.position < row.paired_with
+      ? [{ from: row.position, to: row.paired_with }]
+      : [],
+  ),
 };
 
 const FREE_CANVAS_TEMPLATE: RnaTemplate = {
@@ -225,7 +216,7 @@ function buildTrnaTemplate(length: number): RnaTemplate {
       return "A";
     }
 
-    return "N";
+    return "A";
   });
   const layout = buildSprinzlTRnaLayout(sequence);
 
@@ -241,7 +232,7 @@ export const BUILTIN_TEMPLATES: RnaTemplate[] = [
   TRNA_76_TEMPLATE,
   LINEAR_GENERIC_TEMPLATE,
   MIRNA_HAIRPIN_TEMPLATE,
-  RRNA_COMPACT_TEMPLATE,
+  RRNA_5S_TEMPLATE,
   FREE_CANVAS_TEMPLATE,
 ];
 
@@ -250,7 +241,11 @@ export function getTemplateById(
   templates: RnaTemplate[],
 ): RnaTemplate | undefined {
   const normalizedId =
-    templateId === "trna_76_cloverleaf" ? "trna_classic" : templateId;
+    templateId === "trna_76_cloverleaf"
+      ? "trna_classic"
+      : templateId === "rrna_compact"
+        ? "rrna_5s_secondary_structure"
+        : templateId;
 
   return templates.find((template) => template.id === normalizedId);
 }
@@ -261,6 +256,10 @@ export function materializeTemplate(
 ): RnaTemplate {
   if (template.id === "trna_classic") {
     return buildTrnaTemplate(length);
+  }
+
+  if (template.id === "rrna_5s_secondary_structure") {
+    return RRNA_5S_TEMPLATE;
   }
 
   if (template.id === "free_canvas") {
@@ -314,26 +313,6 @@ export function materializeTemplate(
         from: index + 1,
         to: length - index,
       })).filter((stem) => stem.from + 2 < stem.to),
-    };
-  }
-
-  if (template.id === "rrna_compact") {
-    const nucleotides = Array.from({ length }, (_, index) => {
-      const t = index / Math.max(1, length - 1);
-      const radius = 120 + 90 * Math.sin(t * Math.PI * 3);
-      const angle = t * Math.PI * 4.2;
-      return {
-        pos: index + 1,
-        x: 560 + Math.cos(angle) * radius,
-        y: 360 + Math.sin(angle) * radius * 0.68,
-      };
-    });
-
-    return {
-      ...template,
-      length,
-      nucleotides,
-      stems: [],
     };
   }
 
@@ -415,6 +394,24 @@ export function remapProjectToTemplate(
     };
   }
 
+  if (template.id === "rrna_5s_secondary_structure") {
+    const layout = buildRrna5SLayout(project.sequence);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+
+    return {
+      ...project,
+      moleculeType: "rRNA",
+      numberingMode: template.numberingMode ?? project.numberingMode,
+      templateId: template.id,
+      nucleotides: layout.nucleotides,
+      stems: layout.stems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: "rrna_5s_template",
+      unassignedExtraBases: [],
+    };
+  }
+
   const resolvedTemplate = materializeTemplate(template, project.sequence.length);
   const preservedLabels = filterCurrentAnnotations(project.labels, project.sequence.length);
 
@@ -428,7 +425,7 @@ export function remapProjectToTemplate(
 
       return {
         pos: position.pos,
-        base: getDisplayBaseForToken(project.sequence[index] ?? ""),
+        base: getRenderableBase(project.sequence[index] ?? ""),
         x: position.x,
         y: position.y,
         sequenceIndex: index + 1,
@@ -476,6 +473,22 @@ export function syncProjectToSequence(
     };
   }
 
+  if (template.id === "rrna_5s_secondary_structure") {
+    const layout = buildRrna5SLayout(nextSequence);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+
+    return {
+      ...project,
+      sequence: nextSequence,
+      nucleotides: layout.nucleotides,
+      stems: layout.stems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: "rrna_5s_template",
+      unassignedExtraBases: [],
+    };
+  }
+
   const resolvedTemplate = materializeTemplate(template, nextSequence.length);
   const lastKnown = project.nucleotides.at(-1);
   const preservedLabels = filterCurrentAnnotations(project.labels, nextSequence.length);
@@ -494,7 +507,7 @@ export function syncProjectToSequence(
 
       return {
         pos: index + 1,
-        base: getDisplayBaseForToken(base),
+        base: getRenderableBase(base),
         x: existing?.x ?? fallback.x,
         y: existing?.y ?? fallback.y,
         sequenceIndex: index + 1,

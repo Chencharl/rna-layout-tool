@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { getCatalogItem } from "@/lib/biology";
 import { getDisplayPosition } from "@/lib/numbering";
 import type { RnaLabel, RnaProject, RnaStem } from "@/lib/types";
 
@@ -54,12 +53,12 @@ const THEME_STYLES = {
   },
   publication: {
     background: "#ffffff",
-    stroke: "#6b7280",
-    base: "#111827",
-    number: "#475569",
-    accent: "#1d4ed8",
-    circleFill: "#ffffff",
-    selectedFill: "#dbeafe",
+    stroke: "#111827",
+    base: "#050505",
+    number: "#111827",
+    accent: "#111827",
+    circleFill: "transparent",
+    selectedFill: "rgba(250, 204, 21, 0.24)",
   },
   slides: {
     background: "#f7fcff",
@@ -178,18 +177,6 @@ function getRadialLabelPosition(
   };
 }
 
-function getMarkFill(kind: RnaLabel["kind"]) {
-  if (kind === "adduct") {
-    return "#ecfdf5";
-  }
-
-  if (kind === "modification") {
-    return "#fff7ed";
-  }
-
-  return "#f8fafc";
-}
-
 function getStemStroke(pairStatus?: string) {
   if (pairStatus === "wobble") {
     return "#0f766e";
@@ -200,6 +187,79 @@ function getStemStroke(pairStatus?: string) {
   }
 
   return undefined;
+}
+
+function getNucleotideDisplayText(nucleotide: RnaProject["nucleotides"][number]) {
+  return nucleotide.modification && nucleotide.status !== "missing"
+    ? nucleotide.modification
+    : nucleotide.base;
+}
+
+function getNucleotideTextFill(
+  nucleotide: RnaProject["nucleotides"][number],
+  defaultFill: string,
+) {
+  if (nucleotide.status === "missing") {
+    return "#94a3b8";
+  }
+
+  if (nucleotide.modification) {
+    return "#ff0000";
+  }
+
+  return nucleotide.color ?? defaultFill;
+}
+
+function getNucleotideTextSize(
+  nucleotide: RnaProject["nucleotides"][number],
+  baseFontSize: number,
+) {
+  const displayText = getNucleotideDisplayText(nucleotide);
+
+  if (!nucleotide.modification) {
+    return baseFontSize;
+  }
+
+  return Math.max(10, baseFontSize - Math.max(0, displayText.length - 2) * 1.4);
+}
+
+function renderSymbolWithSuperscriptDigits(text: string, enabled: boolean) {
+  if (!enabled) {
+    return text;
+  }
+
+  return text.split(/(\d+)/).map((part, index) =>
+    /^\d+$/.test(part) ? (
+      <tspan key={`${part}-${index}`} baselineShift="super" fontSize="70%">
+        {part}
+      </tspan>
+    ) : (
+      <tspan key={`${part}-${index}`}>{part}</tspan>
+    ),
+  );
+}
+
+function getAnnotationColor(annotation: RnaProject["annotations"][number]) {
+  if (annotation.color) {
+    return annotation.color;
+  }
+
+  if (annotation.annotation_type === "bisulfite_shift") {
+    return "#7c3aed";
+  }
+
+  if (annotation.annotation_type === "modification") {
+    return "#dc2626";
+  }
+
+  if (
+    annotation.annotation_type === "five_prime_chemistry" ||
+    annotation.annotation_type === "three_prime_heterogeneity"
+  ) {
+    return "#2563eb";
+  }
+
+  return "#475569";
 }
 
 export function RNACanvas({
@@ -234,6 +294,7 @@ export function RNACanvas({
   const orderedNucleotides = [...project.nucleotides].sort((left, right) => left.pos - right.pos);
   const isConventionalTRna =
     project.moleculeType === "tRNA" && project.templateId === "trna_classic";
+  const isFiveSRrna = project.templateId === "rrna_5s_secondary_structure";
   const sequenceOrderedNucleotides = [...project.nucleotides]
     .filter((nucleotide) => nucleotide.sequenceIndex !== undefined)
     .sort(
@@ -256,7 +317,9 @@ export function RNACanvas({
           (right.slotOrder ?? Number.MAX_SAFE_INTEGER) ||
         left.pos - right.pos,
     );
-  const isBaseOnly = project.settings.theme === "base_only";
+  const isBaseOnly =
+    project.settings.theme === "publication" || project.settings.theme === "base_only";
+  const isPlainTextStructure = isBaseOnly || isFiveSRrna;
   const isStructureConstrained =
     project.renderMode === "structure_constrained_mode" ||
     project.renderMode === "atypical_mode";
@@ -403,6 +466,8 @@ export function RNACanvas({
           <p>
             {isConventionalTRna
               ? `${project.title} as a connected tRNA cloverleaf map. Each nucleotide stays on one continuous RNA chain while stem pairings remain visible.`
+              : isFiveSRrna
+                ? `${project.title} on a fixed 5S rRNA secondary-structure template. Pairing lines and coordinates come from the template, not from structure prediction.`
               : `${project.title} with a continuous 5&apos;&rarr;3&apos; RNA backbone and publication-style secondary-structure scaffold. Drag bases, drag marks, or edit pair bonds directly.`}
           </p>
         </div>
@@ -460,7 +525,7 @@ export function RNACanvas({
             fill={theme.background}
             rx="24"
           />
-          {isStructureConstrained && !isBaseOnly ? (
+          {isStructureConstrained && !isPlainTextStructure ? (
             <g pointerEvents="none">
               {backboneSegments.map((segment) => (
                 <line
@@ -477,7 +542,7 @@ export function RNACanvas({
               ))}
             </g>
           ) : null}
-          {isConventionalTRna && tRnaBackbonePath && !isBaseOnly && !isStructureConstrained ? (
+          {isConventionalTRna && tRnaBackbonePath && !isPlainTextStructure && !isStructureConstrained ? (
             <path
               d={tRnaBackbonePath}
               fill="none"
@@ -489,7 +554,7 @@ export function RNACanvas({
               pointerEvents="none"
             />
           ) : null}
-          {!isConventionalTRna && backbonePath && !isBaseOnly && !isStructureConstrained ? (
+          {!isConventionalTRna && backbonePath && !isPlainTextStructure && !isStructureConstrained ? (
             <path
               d={backbonePath}
               fill="none"
@@ -513,12 +578,16 @@ export function RNACanvas({
               return (
                 <line
                   key={`${stem.from}-${stem.to}`}
-                  {...trimLine(from, to, isBaseOnly ? 13 : isConventionalTRna ? tRnaNodeRadius : 18)}
+                  {...trimLine(
+                    from,
+                    to,
+                    isPlainTextStructure ? 13 : isConventionalTRna ? tRnaNodeRadius : 18,
+                  )}
                   stroke={getStemStroke(stem.pairStatus) ?? theme.accent}
                   strokeDasharray={stem.style === "dashed" ? "5 5" : undefined}
-                  strokeWidth={isBaseOnly ? "2.4" : isConventionalTRna ? "2.8" : "4"}
+                  strokeWidth={isPlainTextStructure ? "2.2" : isConventionalTRna ? "2.8" : "4"}
                   strokeLinecap="round"
-                  opacity={isBaseOnly ? "1" : "0.92"}
+                  opacity={isPlainTextStructure ? "0.95" : "0.92"}
                   pointerEvents={mode === "edit-bonds" ? "visibleStroke" : "none"}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -535,7 +604,7 @@ export function RNACanvas({
                 handleNucleotideMouseDown(event, nucleotide.pos, nucleotide.x, nucleotide.y)
               }
             >
-              {isBaseOnly ? (
+              {isPlainTextStructure ? (
                 <circle
                   cx={nucleotide.x}
                   cy={nucleotide.y}
@@ -590,15 +659,16 @@ export function RNACanvas({
                 y={nucleotide.y}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize={
+                  fontSize={getNucleotideTextSize(
+                  nucleotide,
                   nucleotide.fontSize ??
-                  (isConventionalTRna
-                    ? isBaseOnly
-                      ? Math.max(project.settings.nucleotideFontSize + 1, 15)
-                      : Math.max(project.settings.nucleotideFontSize - 2, 13)
-                    : project.settings.nucleotideFontSize)
-                }
-                fill={nucleotide.status === "missing" ? "#94a3b8" : nucleotide.color ?? theme.base}
+                    (isConventionalTRna
+                      ? isPlainTextStructure
+                        ? Math.max(project.settings.nucleotideFontSize + 1, 15)
+                        : Math.max(project.settings.nucleotideFontSize - 2, 13)
+                      : project.settings.nucleotideFontSize),
+                )}
+                fill={getNucleotideTextFill(nucleotide, theme.base)}
                 fontFamily={
                   isConventionalTRna
                     ? "'Helvetica Neue', 'Arial', sans-serif"
@@ -606,7 +676,12 @@ export function RNACanvas({
                 }
                 fontWeight="700"
               >
-                {nucleotide.status === "missing" ? "" : nucleotide.base}
+                {nucleotide.status === "missing"
+                  ? ""
+                  : renderSymbolWithSuperscriptDigits(
+                      getNucleotideDisplayText(nucleotide),
+                      Boolean(nucleotide.modification),
+                    )}
               </text>
               <circle
                 cx={nucleotide.x}
@@ -616,6 +691,7 @@ export function RNACanvas({
                 stroke="transparent"
               />
               {(project.settings.showPositionNumbers ||
+                isFiveSRrna ||
                 (project.settings.showOnlyModifiedPositions && nucleotide.modification)) && (
                 (() => {
                   const displayLabel =
@@ -631,8 +707,8 @@ export function RNACanvas({
                   const numberPosition = isConventionalTRna
                     ? getRadialLabelPosition(nucleotide, canvasCenter, tRnaNodeRadius + 9)
                     : {
-                        x: nucleotide.x + 22,
-                        y: nucleotide.y - 18,
+                        x: nucleotide.x + (isFiveSRrna ? 20 : 22),
+                        y: nucleotide.y - (isFiveSRrna ? 14 : 18),
                       };
 
                   return (
@@ -643,12 +719,14 @@ export function RNACanvas({
                       dominantBaseline="middle"
                       fontSize={
                         isConventionalTRna
-                          ? isBaseOnly
+                          ? isPlainTextStructure
                             ? Math.max(project.settings.numberFontSize, 9)
                             : Math.max(project.settings.numberFontSize - 1, 8)
-                          : project.settings.numberFontSize
+                          : isFiveSRrna
+                            ? Math.max(project.settings.numberFontSize - 1, 8)
+                            : project.settings.numberFontSize
                       }
-                      fill={isBaseOnly ? theme.number : isConventionalTRna ? "#dc2626" : theme.number}
+                      fill={isFiveSRrna ? "#9ca3af" : isPlainTextStructure ? theme.number : isConventionalTRna ? "#dc2626" : theme.number}
                       fontFamily="'IBM Plex Mono', 'SFMono-Regular', monospace"
                       fontWeight="600"
                       pointerEvents="none"
@@ -658,21 +736,6 @@ export function RNACanvas({
                   );
                 })()
               )}
-              {nucleotide.modification && nucleotide.status !== "missing" ? (
-                <text
-                  x={nucleotide.x + (isConventionalTRna ? tRnaNodeRadius + 10 : 24)}
-                  y={nucleotide.y - (isConventionalTRna ? tRnaNodeRadius + 7 : 20)}
-                  textAnchor="start"
-                  dominantBaseline="middle"
-                  fontSize={isConventionalTRna ? 11 : 12}
-                  fill={getCatalogItem(nucleotide.modification)?.color ?? "#be123c"}
-                  fontFamily="'Helvetica Neue', 'Avenir Next', 'Segoe UI', sans-serif"
-                  fontWeight="800"
-                  pointerEvents="none"
-                >
-                  {nucleotide.modification}
-                </text>
-              ) : null}
             </g>
           ))}
           {project.labels.map((label) => {
@@ -704,19 +767,6 @@ export function RNACanvas({
                   strokeWidth={isConventionalTRna ? "1" : "1.5"}
                   pointerEvents="none"
                 />
-                {isConventionalTRna && !isBaseOnly ? (
-                  <rect
-                    x={labelX - labelWidth / 2}
-                    y={labelY - labelHeight / 2}
-                    width={labelWidth}
-                    height={labelHeight}
-                    rx="7"
-                    fill={getMarkFill(label.kind)}
-                    stroke={label.color}
-                    strokeOpacity="0.45"
-                    strokeWidth="1"
-                  />
-                ) : null}
                 <text
                   x={labelX}
                   y={labelY}
@@ -731,7 +781,7 @@ export function RNACanvas({
                       : "'Avenir Next', 'Segoe UI', sans-serif"
                   }
                 >
-                  {label.text}
+                  {renderSymbolWithSuperscriptDigits(label.text, label.kind !== "note")}
                 </text>
                 {isConventionalTRna && !isBaseOnly ? (
                   <g
@@ -771,17 +821,47 @@ export function RNACanvas({
               </g>
             );
           })}
-          {project.annotations.map((annotation) => (
-            <text
-              key={annotation.id}
-              x={annotation.x}
-              y={annotation.y}
-              fontSize="12"
-              fill={annotation.color ?? theme.number}
-            >
-              {annotation.text}
-            </text>
-          ))}
+          {project.annotations.map((annotation) => {
+            const target =
+              annotation.position !== undefined
+                ? project.nucleotides.find((nucleotide) => nucleotide.pos === annotation.position)
+                : undefined;
+            const x = target ? target.x + 18 : annotation.x;
+            const y = target ? target.y - 18 : annotation.y;
+            const label = annotation.label ?? annotation.text;
+
+            if (x === undefined || y === undefined || !label) {
+              return null;
+            }
+
+            const color = getAnnotationColor(annotation);
+            const showDot =
+              annotation.annotation_type === "modification" ||
+              annotation.annotation_type === "bisulfite_shift";
+
+            return (
+              <g key={annotation.id} pointerEvents="none">
+                {showDot && target ? (
+                  <circle
+                    cx={target.x + 10}
+                    cy={target.y - 10}
+                    r="4"
+                    fill={color}
+                    opacity="0.86"
+                  />
+                ) : null}
+                <text
+                  x={x}
+                  y={y}
+                  fontSize="12"
+                  fill={color}
+                  fontWeight={showDot ? "700" : "600"}
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          })}
           {fivePrimeLabel ? (
             <text
               x={fivePrimeLabel.x}

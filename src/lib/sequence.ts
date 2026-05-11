@@ -1,3 +1,5 @@
+import { getKnownSequenceTokenPatterns } from "./modificationMapping";
+
 const BRACKETED_TOKEN_PATTERN = /\[([^\]]+)\]/g;
 
 export function parseSequenceInput(input: string): string[] {
@@ -7,11 +9,16 @@ export function parseSequenceInput(input: string): string[] {
     return [];
   }
 
-  if (/[\s,]/.test(trimmed) || trimmed.includes("[")) {
+  if (BRACKETED_TOKEN_PATTERN.test(trimmed)) {
+    BRACKETED_TOKEN_PATTERN.lastIndex = 0;
     return parseDelimitedSequence(trimmed);
   }
 
-  return trimmed.split("");
+  if (/\s/.test(trimmed)) {
+    return parseDelimitedSequence(trimmed);
+  }
+
+  return tokenizeKnownSequenceString(trimmed);
 }
 
 function parseDelimitedSequence(input: string): string[] {
@@ -23,6 +30,27 @@ function parseDelimitedSequence(input: string): string[] {
     .split(/[\s,]+/)
     .map((token) => token.trim())
     .filter(Boolean);
+}
+
+function tokenizeKnownSequenceString(input: string): string[] {
+  const patterns = getKnownSequenceTokenPatterns();
+  const tokens: string[] = [];
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const match = patterns.find((pattern) => input.startsWith(pattern, cursor));
+
+    if (match) {
+      tokens.push(match);
+      cursor += match.length;
+      continue;
+    }
+
+    tokens.push(input[cursor]);
+    cursor += 1;
+  }
+
+  return tokens;
 }
 
 export function formatSequenceTokens(tokens: string[]): string {

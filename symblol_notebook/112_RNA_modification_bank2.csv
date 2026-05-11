@@ -1,0 +1,113 @@
+#,,Symbol,Common Name,Internal,Mass diff with Standard
+1,,Y,pseudouridine,306.0253,0
+2,,D,dihydrouridine,308.04095,2.01565
+3,,m1A,1-methyladenosine,343.06817,14.01565
+4,,m2A,2-methyladenosine,343.06817,14.01565
+5,,m6A,N6-methyladenosine,343.06817,14.01565
+6,,Am,2'-O-methyladenosine,343.06817,14.01565
+7,,m3C,3-methylcytidine,319.05694,14.01565
+8,,m5C,5-methylcytidine,319.05694,14.01565
+9,,Cm,2'-O-methylcytidine,319.05694,14.01565
+10,,m1G,1-methylguanosine,359.06308,14.01565
+11,,m2G,N2-methylguanosine,359.06308,14.01565
+12,,m7G,7-methylguanosine,359.06308,14.01565
+13,,Gm,2'-O-methylguanosine,359.06308,14.01565
+14,,m5U,5-methyluridine,320.04095,14.01565
+15,,Um,2'-O-methyluridine,320.04095,14.01565
+16,,m1Y,1-methylpseudouridine,320.04095,14.01565
+17,,Ym,2'-O-methylpseudouridine,320.04095,14.01565
+18,,m4C,N4-methylcytidine,319.05694,14.01565
+19,,m3U,3-methyluridine,320.04095,14.01565
+20,,m3Y,3-methylpseudouridine,320.04095,14.01565
+21,,m8A,8-methyladenosine,343.06817,14.01565
+22,,s2C,2-thiocytidine,321.01844,15.97715
+23,,s2U,2-thiouridine,322.00246,15.97716
+24,,s4U,4-thiouridine,322.00246,15.97716
+25,,ho5U,5-hydroxyuridine,322.02022,15.99492
+26,,m5D,5-methyldihydrouridine,322.0566,16.0313
+27,,preQ0,7-cyano-7-deazaguanosine,369.04743,24
+28,,f5C,5-formylcytidine,333.0362,27.99491
+29,,m5Cm,"5,2'-O-dimethylcytidine",333.07259,28.0313
+30,,m22G,"N2,N2-dimethylguanosine",373.07873,28.0313
+31,,m2Gm,"N2,2'-O-dimethylguanosine",373.07873,28.0313
+32,,preQ1,7-aminomethyl-7-deazaguanosine,373.07873,28.0313
+33,,m5Um,"5,2'-O-dimethyluridine",334.0566,28.0313
+34,,m62A,"N6,N6-dimethyladenosine",357.08382,28.0313
+35,,m4Cm,"N4,2'-O-dimethylcytidine",333.07259,28.0313
+36,,m6Am,"N6,2'-O-dimethyladenosine",357.08382,28.0313
+37,,"m2,7G","N2,7-dimethylguanosine",373.07873,28.0313
+38,,m3Um,"3,2'-O-dimethyluridine",334.0566,28.0313
+39,,m1Gm,"1,2'-O-dimethylguanosine",373.07873,28.0313
+40,,m1Am,"1,2'-O-dimethyladenosine",357.08382,28.0313
+41,,m5s2U,5-methyl-2-thiouridine,336.01811,29.99281
+42,,s2Um,2-thio-2'-O-methyluridine,336.01811,29.99281
+43,,hm5C,5-hydroxymethylcytidine,335.05185,30.01056
+44,,mo5U,5-methoxyuridine,336.03587,30.01057
+45,,imG-14,4-demethylwyosine,383.06308,38.01565
+46,,cnm5U,5-cyanomethyl-uridine,345.0362,39.0109
+47,,G+,archaeosine,386.07398,41.02655
+48,,ac4C,N4-acetylcytidine,347.05185,42.01056
+49,,f5Cm,5-formyl-2'-O-methylcytidine,347.05185,42.01056
+50,,ac6A,N6-acetyladenosine,371.06308,42.01056
+51,,m22Gm,"N2,N2,2'-O-trimethylguanosine",387.09438,42.04695
+52,,m62Am,"N6,N6,2'-O-trimethyladenosine",371.09947,42.04695
+53,,"m2,2,7G","N2,N2,7-trimethylguanosine",387.09438,42.04695
+54,,"m2,7Gm","N2,7,2'-O-trimethylguanosine",387.09438,42.04695
+55,,m42Cm,"N4,N4,2'-O-trimethylcytidine",347.08824,42.04695
+56,,mnm5U,5-methylaminomethyluridine,349.0675,43.0422
+57,,nm5s2U,5-aminomethyl-2-thiouridine,351.02901,45.00371
+58,,imG,wyosine,397.07873,52.0313
+59,,imG2,isowyosine,397.07873,52.0313
+60,,ac4Cm,N4-acetyl-2'-O-methylcytidine,361.0675,56.02621
+61,,ncm5U,5-carbamoylmethyluridine,363.04677,57.02147
+62,,cm5U,5-carboxymethyluridine,364.03078,58.00548
+63,,mnm5s2U,5-methylaminomethyl-2-thiouridine,365.04466,59.01936
+64,,ms2m6A,2-methylthio-N6-methyladenosine,389.0558,60.00328
+65,,mimG,methylwyosine,411.09438,66.04695
+66,,i6A,N6-isopentenyladenosine,397.11512,68.0626
+67,,ncm5Um,5-carbamoylmethyl-2'-O-methyluridine,377.06242,71.03712
+68,,mcm5U,5-methoxycarbonylmethyluridine,378.04643,72.02113
+69,,cmo5U,uridine 5-oxyacetic acid,380.0257,74.0004
+70,,chm5U,5-(carboxyhydroxymethyl)uridine,380.0257,74.0004
+71,,io6A,N6-(cis-hydroxyisopentenyl)adenosine,413.11003,84.05751
+72,,mcm5Um,5-methoxycarbonylmethyl-2'-O-methyluridine,392.06208,86.03678
+73,,cmnm5U,5-carboxymethylaminomethyluridine,393.05733,87.03203
+74,,mcm5s2U,5-methoxycarbonylmethyl-2-thiouridine,394.02359,87.99829
+75,,mcmo5U,uridine 5-oxyacetic acid methyl ester,394.04135,88.01605
+76,,mchm5U,5-(carboxyhydroxymethyl)uridine methyl ester,394.04135,88.01605
+77,,inm5U,5-(isopentenylaminomethyl)uridine,403.11445,97.08915
+78,,g6A,N6-glycinylcarbamoyladenosine,430.06381,101.01129
+79,,acp3U,3-(3-amino-3-carboxypropyl)uridine,407.07298,101.04768
+80,,cmnm5Um,5-carboxymethylaminomethyl- 2'-O-methyluridine,407.07298,101.04768
+81,,cmnm5s2U,5-carboxymethylaminomethyl-2-thiouridine,409.03449,103.00919
+82,,mnm5se2U,5-methylaminomethyl-2-selenouridine,412.98911,106.96381
+83,,inm5Um,5-(isopentenylaminomethyl)- 2'-O-methyluridine,417.1301,111.1048
+84,,C+,agmatidine,417.15257,112.11128
+85,,inm5s2U,5-(isopentenylaminomethyl)- 2-thiouridine,419.09161,113.06631
+86,,ms2i6A,2-methylthio-N6-isopentenyladenosine,443.10284,114.05032
+87,,m1acp3Y,1-methyl-3-(3-amino-3-carboxypropyl) pseudouridine,421.08863,115.06333
+88,,Q,queuosine,471.11551,126.06808
+89,,k2C,lysidine,433.13625,128.09496
+90,,ms2io6A,2-methylthio-N6-(cis-hydroxyisopentenyl) adenosine,459.09776,130.04524
+91,,tm5U,5-taurinomethyluridine,443.03997,137.01467
+92,,oQ,epoxyqueuosine,487.11043,142.063
+93,,t6A,N6-threonylcarbamoyladenosine,474.09003,145.03751
+94,,tm5s2U,5-taurinomethyl-2-thiouridine,459.01712,152.99182
+95,,m6t6A,N6-methyl-N6-threonylcarbamoyladenosine,488.10568,159.05316
+96,,hn6A,N6-hydroxynorvalylcarbamoyladenosine,488.10568,159.05316
+97,,OHyW*,undermodified hydroxywybutosine,514.12133,169.0739
+98,,ms2t6A,2-methylthio-N6-threonyl carbamoyladenosine,520.07775,191.02523
+99,,gmnm5s2U,geranylated 5-methylaminomethyl-2-thiouridine,501.16986,195.14456
+100,,ms2hn6A,2-methylthio-N6-hydroxynorvalyl carbamoyladenosine,534.0934,205.04088
+101,,Ar(p),2'-O-ribosyladenosine (phosphate),541.06111,212.00859
+102,,Gr(p),2'-O-ribosylguanosine (phosphate),557.05602,212.00859
+103,,yW,wybutosine,570.14754,225.10011
+104,,gcmnm5s2U,geranylated 5-carboxymethylaminomethyl-2-thiouridine,545.15969,239.13439
+105,,OHyW,hydroxywybutosine,586.14246,241.09503
+106,,o2yW,peroxywybutosine,602.13737,257.08994
+107,,galQ,galactosyl-queuosine,633.16834,288.12091
+108,,manQ,mannosyl-queuosine,633.16834,288.12091
+109,,I,inosine,330.03654,-15.01086
+110,,m1I,1-methylinosine,344.052,
+111,,m1Im,"1,2'-O-dimethylinosine",358.06784,
+112,,Im,2'-O-methylinosine,344.05219,

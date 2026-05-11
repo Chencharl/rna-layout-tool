@@ -18,7 +18,13 @@ export type RnaRegion =
   | "variable"
   | "t-loop"
   | "tail"
-  | "extra";
+  | "extra"
+  | "terminal_stem"
+  | "internal_stem"
+  | "hairpin_loop"
+  | "internal_loop"
+  | "bulge"
+  | "junction";
 export type RnaDomainType =
   | "acceptor_candidate"
   | "D_arm_candidate"
@@ -43,6 +49,7 @@ export type RnaRenderMode =
   | "short_atypical"
   | "expanded_variable"
   | "long_variable_arm"
+  | "rrna_5s_template"
   | "structure_constrained_mode"
   | "atypical_mode";
 
@@ -91,10 +98,22 @@ export type RnaLabel = {
 
 export type RnaAnnotation = {
   id: string;
-  text: string;
-  x: number;
-  y: number;
+  text?: string;
+  x?: number;
+  y?: number;
   color?: string;
+  position?: number;
+  annotation_type?:
+    | "modification"
+    | "bisulfite_shift"
+    | "five_prime_chemistry"
+    | "three_prime_heterogeneity"
+    | "isoform"
+    | "truncation"
+    | "extension";
+  label?: string;
+  color_group?: string;
+  note?: string;
 };
 
 export type RnaSettings = {

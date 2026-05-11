@@ -78,7 +78,7 @@ export function RNAInspector({
         <label className="field">
           <span>Base / token</span>
           <input
-            value={nucleotide?.base ?? ""}
+            value={nucleotide?.originalToken ?? nucleotide?.modification ?? nucleotide?.base ?? ""}
             onChange={(event) => onBaseChange(event.target.value)}
             disabled={!nucleotide}
           />

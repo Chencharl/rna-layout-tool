@@ -11,7 +11,12 @@ execFileSync(
   path.join(root, "node_modules/.bin/tsc"),
   [
     "src/lib/structureLayout.ts",
+    "src/lib/annotations.ts",
+    "src/lib/modificationMapping.ts",
+    "src/lib/geometry.ts",
+    "src/lib/rrna5s.ts",
     "src/lib/biology.ts",
+    "src/lib/sequence.ts",
     "src/lib/types.ts",
     "src/lib/sprinzl.ts",
     "src/lib/templates.ts",
@@ -34,6 +39,8 @@ const { buildStructureConstrainedLayout, parseDotBracketStructure } = require(pa
   "structureLayout.js",
 ));
 const { buildSprinzlTRnaLayout } = require(path.join(outDir, "sprinzl.js"));
+const { parseSequenceInput } = require(path.join(outDir, "sequence.js"));
+const { parseSequenceWithModifications } = require(path.join(outDir, "annotations.js"));
 const { createDefaultProject } = require(path.join(outDir, "defaultProject.js"));
 const {
   BUILTIN_TEMPLATES,
@@ -41,7 +48,7 @@ const {
   remapProjectToTemplate,
   syncProjectToSequence,
 } = require(path.join(outDir, "templates.js"));
-const { validateProject } = require(path.join(outDir, "validation.js"));
+const { buildRrna5SLayout, RRNA_5S_TEMPLATE_ROWS } = require(path.join(outDir, "rrna5s.js"));
 
 const cases = [
   {
@@ -139,6 +146,40 @@ const currentSources = new Set([
 
 const freeTemplate = getTemplateById("free_canvas", BUILTIN_TEMPLATES);
 assert.ok(freeTemplate, "free canvas template should exist");
+const rrna5sTemplate = getTemplateById("rrna_5s_secondary_structure", BUILTIN_TEMPLATES);
+assert.ok(rrna5sTemplate, "5S rRNA secondary-structure template should exist");
+assert.equal(rrna5sTemplate.name, "rRNA 5S Secondary Structure", "rRNA preset is literature-style 5S template");
+assert.equal(getTemplateById("rrna_compact", BUILTIN_TEMPLATES)?.id, "rrna_5s_secondary_structure", "old compact preset id maps to 5S template");
+assert.equal(RRNA_5S_TEMPLATE_ROWS.length, 120, "5S rRNA template has 120 fixed coordinate rows");
+assert.equal(
+  RRNA_5S_TEMPLATE_ROWS.every((row) => typeof row.x === "number" && typeof row.y === "number" && "paired_with" in row),
+  true,
+  "5S rRNA template rows expose position/base/x/y/paired_with/region fields",
+);
+const rrna5sLayout = buildRrna5SLayout(`${"A".repeat(120)}`.split(""));
+assert.equal(rrna5sLayout.nucleotides.length, 120, "5S rRNA layout maps exact 120 nt sequence to template positions");
+assert.ok(rrna5sLayout.stems.length > 25, "5S rRNA layout draws template-defined pairing lines");
+assert.deepEqual(
+  rrna5sLayout.stems.slice(0, 3).map((stem) => [stem.from, stem.to]),
+  [
+    [1, 120],
+    [2, 119],
+    [3, 118],
+  ],
+  "5S rRNA terminal stem keeps 5 prime and 3 prime ends paired near the template stem",
+);
+assert.deepEqual(
+  rrna5sLayout.nucleotides
+    .filter((node) => node.positionLabel)
+    .slice(0, 5)
+    .map((node) => node.positionLabel),
+  ["1", "10", "20", "30", "40"],
+  "5S rRNA uses sparse publication-style position labels",
+);
+const rrna5sMismatch = buildRrna5SLayout("ACGU".split(""));
+assert.equal(rrna5sMismatch.nucleotides.length, 120, "5S rRNA length mismatch still shows the fixed template instead of a broken partial fold");
+assert.ok(rrna5sMismatch.warnings.some((warning) => warning.includes("expects 120 positions")), "5S rRNA length mismatch reports a clear warning");
+
 const plainSequence = "ACGUACGU".split("");
 const contaminatedProject = {
   ...createDefaultProject(),
@@ -336,9 +377,19 @@ assert.equal(nodeByLabel(standardSlotLayout, "75").base, "C", "CCA slot 75");
 assert.equal(nodeByLabel(standardSlotLayout, "76").base, "A", "CCA slot 76");
 assert.equal(nodeByLabel(standardSlotLayout, "76").sequenceIndex, standardSequence.length, "76 is the 3 prime terminal slot");
 assert.equal(
-  standardSlotLayout.stems.some((stem) => stem.from === nodeByLabel(standardSlotLayout, "1").pos && stem.to === nodeByLabel(standardSlotLayout, "72").pos),
-  true,
-  "standard slot layout draws occupied 1-72 ladder",
+  standardSlotLayout.stems.length,
+  21,
+  "standard slot layout draws canonical Sprinzl secondary-structure pairs by default",
+);
+assert.deepEqual(
+  standardSlotLayout.stems.slice(0, 4).map((stem) => [stem.from, stem.to]),
+  [
+    [1, 72],
+    [2, 71],
+    [3, 70],
+    [4, 69],
+  ],
+  "canonical Sprinzl acceptor stem pairs are emitted in gtRNAdb-style slot coordinates",
 );
 
 const shortSlotSequence = "ACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUACGUCCA".split("");
@@ -677,9 +728,9 @@ assert.equal(
 );
 
 const noCcaLayout = buildSprinzlTRnaLayout("ACGUACGUACGU".split(""));
-assert.equal(nodeByLabel(noCcaLayout, "74"), undefined, "no CCA skips slot 74");
-assert.equal(nodeByLabel(noCcaLayout, "75"), undefined, "no CCA skips slot 75");
-assert.equal(nodeByLabel(noCcaLayout, "76"), undefined, "no CCA skips slot 76");
+assert.equal(nodeByLabel(noCcaLayout, "74").base, "C", "3 prime anchor maps last third base to slot 74");
+assert.equal(nodeByLabel(noCcaLayout, "75").base, "G", "3 prime anchor maps penultimate base to slot 75");
+assert.equal(nodeByLabel(noCcaLayout, "76").base, "U", "3 prime anchor maps terminal base to slot 76");
 assert.ok(noCcaLayout.warnings.includes("missing CCA tail"), "missing CCA is reported as warning only");
 
 const modifiedSequence = [...standardSequence];
@@ -688,11 +739,59 @@ modifiedSequence[15] = "D";
 modifiedSequence[53] = "mU";
 modifiedSequence[60] = "X";
 const modifiedLayout = buildSprinzlTRnaLayout(modifiedSequence);
-assert.equal(nodeByLabel(modifiedLayout, "8").modification, "s4U", "parsed modification attaches to current slot 8");
-assert.equal(nodeByLabel(modifiedLayout, "16").modification, "D", "parsed D attaches to current slot 16");
-assert.equal(nodeByLabel(modifiedLayout, "54").modification, "mU", "parsed mU attaches to current slot 54");
-assert.equal(nodeByLabel(modifiedLayout, "61").modification, "X", "parsed X attaches to current slot 61");
-assert.equal(nodeByLabel(modifiedLayout, "8").base, "U", "modified token still renders its base");
+assert.equal(nodeByLabel(modifiedLayout, "8").modification, "s4U", "controlled parser separates s4U modification from base");
+assert.equal(nodeByLabel(modifiedLayout, "16").modification, "D", "controlled parser separates D modification from base");
+assert.equal(
+  modifiedLayout.mappedPositions.find((node) => node.sequenceIndex === 54)?.modification,
+  "mU",
+  "controlled parser separates mU modification from base",
+);
+assert.equal(nodeByLabel(modifiedLayout, "8").base, "U", "modified-looking token renders its base");
+assert.equal(
+  modifiedLayout.mappedPositions.some((node) => node.base === "N" || node.base === "X"),
+  false,
+  "unknown sequence tokens do not create N or X nodes",
+);
+
+const mappedCodeTokens = parseSequenceInput('AKBJPT*,');
+assert.deepEqual(
+  mappedCodeTokens,
+  ["A", "K", "B", "J", "P", "T", "*", ","],
+  "raw sequence tokenizer preserves symbol_mapping code tokens as individual positions",
+);
+assert.deepEqual(
+  parseSequenceWithModifications(mappedCodeTokens).map((token) => [token.base, token.modification]),
+  [
+    ["A", null],
+    ["G", "m1G"],
+    ["C", "Cm"],
+    ["U", "Um"],
+    ["U", "psi"],
+    ["U", "m5U"],
+    ["A", "ms2i6A"],
+    ["U", "mchm5U"],
+  ],
+  "symbol_mapping code tokens resolve to the correct displayed modification and base",
+);
+
+const mappedSymbolTokens = parseSequenceInput("m1Ams2i6AGmm5Umm3Ctm5U");
+assert.deepEqual(
+  mappedSymbolTokens,
+  ["m1A", "ms2i6A", "Gm", "m5Um", "m3C", "tm5U"],
+  "raw sequence tokenizer uses longest known modification symbols before single bases",
+);
+assert.deepEqual(
+  parseSequenceWithModifications(mappedSymbolTokens).map((token) => [token.base, token.modification]),
+  [
+    ["A", "m1A"],
+    ["A", "ms2i6A"],
+    ["G", "Gm"],
+    ["U", "m5Um"],
+    ["C", "m3C"],
+    ["U", "tm5U"],
+  ],
+  "symbol_mapping symbols resolve without requiring spaces or brackets",
+);
 
 const modifiedProject = syncProjectToSequence(
   {
@@ -721,8 +820,8 @@ const dotBracketSlotLayout = buildSprinzlTRnaLayout(standardSequence, {
 });
 assert.deepEqual(
   dotBracketSlotLayout.stems.map((stem) => [stem.from, stem.to]),
-  [[nodeByLabel(dotBracketSlotLayout, "1").pos, nodeByLabel(dotBracketSlotLayout, "76").pos]],
-  "dot-bracket pair lines are applied to occupied slots without changing slot assignment",
+  [[1, 76]],
+  "Sprinzl slot renderer maps dot-bracket sequence-index pairs onto current slots",
 );
 assert.equal(
   nodeByLabel(dotBracketSlotLayout, "1").x,
@@ -740,44 +839,10 @@ assert.equal(
 );
 
 const withValidation = buildSprinzlTRnaLayout(mismatchSequence, { runValidation: true });
-assert.equal(withValidation.renderMode, "sprinzl_validation", "validation on render mode");
-assert.ok(
-  withValidation.warnings.some((warning) => warning.startsWith("stem mismatch")),
-  "Sprinzl mismatch warnings appear only when validation is explicit",
-);
-
-const validationOnProject = remapProjectToTemplate(
-  {
-    ...shortTemplateProject,
-    sequence: mismatchSequence,
-    settings: {
-      ...shortTemplateProject.settings,
-      runSprinzlValidation: true,
-    },
-  },
-  trnaTemplate,
-);
-assert.ok(
-  validateProject(validationOnProject, BUILTIN_TEMPLATES).some(
-    (message) => message.id === "render-mode-sprinzl-validation",
-  ),
-  "validation panel clearly labels opt-in Sprinzl validation",
-);
-
-const validationOffProject = remapProjectToTemplate(
-  {
-    ...validationOnProject,
-    settings: {
-      ...validationOnProject.settings,
-      runSprinzlValidation: false,
-    },
-  },
-  trnaTemplate,
-);
 assert.equal(
-  validationOffProject.mappingWarnings.some((warning) => warning.startsWith("stem mismatch")),
+  withValidation.warnings.some((warning) => warning.startsWith("stem mismatch")),
   false,
-  "disabling Sprinzl validation removes canonical mismatch warnings",
+  "runValidation no longer creates canonical mismatch warnings in renderer mode",
 );
 
 const deterministicSnapshots = Array.from({ length: 10 }, () =>

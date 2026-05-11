@@ -24,12 +24,10 @@ import {
   remapProjectToTemplate,
   syncProjectToSequence,
 } from "@/lib/templates";
-import { buildStructureConstrainedLayout } from "@/lib/structureLayout";
 import { buildSprinzlTRnaLayout } from "@/lib/sprinzl";
 import type {
   RnaLabel,
   RnaNucleotide,
-  RnaPairStatus,
   RnaProject,
   RnaStem,
   RnaTemplate,
@@ -46,20 +44,6 @@ type StemAlignmentGroup = {
 
 function areNeighboringStemPairs(left: RnaStem, right: RnaStem) {
   return Math.abs(left.from - right.from) === 1 && Math.abs(left.to - right.to) === 1;
-}
-
-function getManualPairStatus(leftBase = "", rightBase = ""): RnaPairStatus {
-  const pair = `${leftBase.toUpperCase()}-${rightBase.toUpperCase()}`;
-
-  if (["A-U", "U-A", "G-C", "C-G"].includes(pair)) {
-    return "normal";
-  }
-
-  if (pair === "G-U" || pair === "U-G") {
-    return "wobble";
-  }
-
-  return "mismatch";
 }
 
 function getStemAlignmentGroup(
@@ -464,78 +448,57 @@ export function RNAEditor() {
       return;
     }
 
-    const pairStatus = getManualPairStatus(from.base, to.base);
-
     dispatch({
       type: "add_stem",
       stem: {
         from: from.pos,
         to: to.pos,
-        pairStatus,
-        style: pairStatus === "mismatch" ? "dashed" : undefined,
+        pairStatus: "custom",
       },
     });
     setBondStartPos(null);
   }
 
   function handleApplySecondaryStructure() {
-    if (project.templateId === "trna_classic") {
-      const result = buildSprinzlTRnaLayout(project.sequence, {
-        runValidation: project.settings.runSprinzlValidation,
-        dotBracket: secondaryStructureText,
-      });
-      const renderedNodes = project.settings.showSprinzlOverlay
-        ? result.mappedPositions
-        : result.mappedPositions.filter((node) => node.status !== "missing");
-      const renderedPositions = new Set(renderedNodes.map((node) => node.pos));
-      const nextProject: RnaProject = {
-        ...project,
-        stems: result.stems.filter(
-          (stem) => renderedPositions.has(stem.from) && renderedPositions.has(stem.to),
-        ),
-        nucleotides: renderedNodes,
-        labels: filterCurrentAnnotations(project.labels, Math.max(0, ...renderedPositions)).filter(
-          (label) => renderedPositions.has(label.pos),
-        ),
-        mappingWarnings: result.warnings,
-        renderMode: result.renderMode,
-        unassignedExtraBases: result.unassignedExtraBases,
-      };
-      const nextViewport = getViewportForProject(nextProject);
-
-      dispatch({ type: "replace_project", project: nextProject });
-      setZoom(nextViewport.zoom);
-      setViewportCenter(nextViewport.center);
+    if (project.templateId !== "trna_classic") {
       setEditorMessage({
-        id: "vienna-success",
-        level: "success",
-        text: `Applied dot-bracket pairs onto the Sprinzl slot map without changing slot coordinates.`,
+        id: "secondary-structure-nontrna",
+        level: "warning",
+        text: "Secondary structure import is currently wired for the tRNA Sprinzl layout.",
       });
       return;
     }
 
-    const result = buildStructureConstrainedLayout(project.sequence, secondaryStructureText);
+    const result = buildSprinzlTRnaLayout(project.sequence, {
+      runValidation: project.settings.runSprinzlValidation,
+      dotBracket: secondaryStructureText,
+    });
 
-    if (result.nodes.length === 0) {
+    if (result.warnings.some((warning) => warning.startsWith("Dot-bracket") || warning.startsWith("Unmatched") || warning.startsWith("Unsupported"))) {
       setEditorMessage({
-        id: "vienna-error",
+        id: "secondary-structure-error",
         level: "error",
         text: result.warnings.join(" "),
       });
       return;
     }
 
+    const renderedNodes = project.settings.showSprinzlOverlay
+      ? result.mappedPositions
+      : result.mappedPositions.filter((node) => node.status !== "missing");
+    const renderedPositions = new Set(renderedNodes.map((node) => node.pos));
     const nextProject: RnaProject = {
       ...project,
-      stems: result.stems,
-      nucleotides: result.nodes,
-      labels: filterCurrentAnnotations(project.labels, result.nodes.length),
+      nucleotides: renderedNodes,
+      stems: result.stems.filter(
+        (stem) => renderedPositions.has(stem.from) && renderedPositions.has(stem.to),
+      ),
+      labels: filterCurrentAnnotations(project.labels, Math.max(0, ...renderedPositions)).filter(
+        (label) => renderedPositions.has(label.pos),
+      ),
       mappingWarnings: result.warnings,
       renderMode: result.renderMode,
-      unassignedExtraBases: [],
-      domains: result.domains,
-      anticodon: result.anticodon,
-      ccaStatus: result.ccaStatus,
+      unassignedExtraBases: result.unassignedExtraBases,
     };
     const nextViewport = getViewportForProject(nextProject);
 
@@ -543,9 +506,9 @@ export function RNAEditor() {
     setZoom(nextViewport.zoom);
     setViewportCenter(nextViewport.center);
     setEditorMessage({
-      id: "vienna-success",
+      id: "secondary-structure-success",
       level: "success",
-      text: `Applied ${result.pairEdges.length} dot-bracket pairs as the primary structure constraint.`,
+      text: `Applied ${nextProject.stems.length} tRNA secondary-structure pair lines.`,
     });
   }
 
@@ -725,6 +688,12 @@ export function RNAEditor() {
               if (!selectedPos) {
                 return;
               }
+
+              if (kind === "modification") {
+                dispatch({ type: "update_nucleotide", pos: selectedPos, key: "base", value: text });
+                return;
+              }
+
               createCanvasLabel(selectedPos, kind, text, color);
             }}
             onUpdateLabel={(id, key, value) => {
@@ -742,7 +711,7 @@ export function RNAEditor() {
               dispatch({
                 type: "insert_nucleotide",
                 afterPos: anchor.pos,
-                base: "N",
+                base: "A",
                 x: anchor.x + 42,
                 y: anchor.y,
               });

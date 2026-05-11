@@ -97,6 +97,14 @@ export function RNAToolbar({
           </button>
         </div>
 
+        {project.mappingWarnings && project.mappingWarnings.length > 0 ? (
+          <div className="warning-list">
+            {project.mappingWarnings.map((warning, index) => (
+              <p key={`${warning}-${index}`}>{warning}</p>
+            ))}
+          </div>
+        ) : null}
+
         <label className="field">
           <span>Molecule Type</span>
           <select
@@ -127,7 +135,7 @@ export function RNAToolbar({
         </label>
 
         <label className="field">
-          <span>Dot-bracket secondary structure</span>
+          <span>tRNA secondary structure</span>
           <textarea
             value={secondaryStructureText}
             onChange={(event) => onSecondaryStructureChange(event.target.value)}
@@ -135,7 +143,8 @@ export function RNAToolbar({
             placeholder="((((....))))...."
           />
           <small>
-            Optional dot-bracket input. When provided, it initializes editable pair lines only.
+            Optional tRNAscan-SE / gtRNAdb-style dot-bracket. Leave blank to use the standard
+            Sprinzl stem pairs.
           </small>
           <button type="button" className="ghost-button" onClick={onApplySecondaryStructure}>
             Use secondary structure
@@ -201,7 +210,7 @@ export function RNAToolbar({
             <option value="light">Light</option>
             <option value="publication">Publication</option>
             <option value="slides">Slides</option>
-            <option value="base_only">Base only</option>
+            <option value="base_only">Minimal</option>
           </select>
         </label>
 

@@ -1,3 +1,4 @@
+import { parseSequenceWithModifications } from "./annotations";
 import type { RnaLabel, RnaProject, RnaSettings } from "./types";
 
 export type ProjectAction =
@@ -51,18 +52,26 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
           return nucleotide;
         }
 
-        const next = {
-          ...nucleotide,
-          [action.key]: action.value,
-        };
-
         if (action.key === "base" && typeof action.value === "string") {
+          const parsed = parseSequenceWithModifications([action.value])[0];
           const sequenceIndex = nucleotide.sequenceIndex ?? action.pos;
 
           if (sequenceIndex >= 1 && sequenceIndex <= sequence.length) {
             sequence[sequenceIndex - 1] = action.value;
           }
+
+          return {
+            ...nucleotide,
+            base: parsed?.base ?? action.value,
+            originalToken: action.value,
+            modification: parsed?.modification ?? undefined,
+          };
         }
+
+        const next = {
+          ...nucleotide,
+          [action.key]: action.value,
+        };
 
         return next;
       });
@@ -132,7 +141,7 @@ export function projectReducer(project: RnaProject, action: ProjectAction): RnaP
           : Math.max(0, Math.min(action.afterPos, project.nucleotides.length));
       const newNucleotide = {
         pos: insertionIndex + 1,
-        base: action.base ?? "N",
+        base: action.base ?? "A",
         x: action.x,
         y: action.y,
         visible: true,
