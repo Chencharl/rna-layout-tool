@@ -365,6 +365,37 @@ function filterCurrentAnnotationsForNodes(labels: RnaProject["labels"], nodes: R
   );
 }
 
+function preservePositionLabels(
+  nextNodes: RnaNucleotide[],
+  previousNodes: RnaNucleotide[],
+) {
+  const hasManualPositionLabel = (node: RnaNucleotide) =>
+    node.positionLabel !== undefined &&
+    node.positionLabel !== (node.sprinzlLabel ?? String(node.pos));
+  const previousBySequenceIndex = new Map(
+    previousNodes
+      .filter((node) => node.sequenceIndex !== undefined)
+      .map((node) => [node.sequenceIndex as number, node]),
+  );
+  const previousByPos = new Map(previousNodes.map((node) => [node.pos, node]));
+
+  return nextNodes.map((node) => {
+    const previous =
+      node.sequenceIndex !== undefined
+        ? previousBySequenceIndex.get(node.sequenceIndex)
+        : previousByPos.get(node.pos);
+
+    if (!previous || !hasManualPositionLabel(previous)) {
+      return node;
+    }
+
+    return {
+      ...node,
+      positionLabel: previous.positionLabel,
+    };
+  });
+}
+
 export function remapProjectToTemplate(
   project: RnaProject,
   template: RnaTemplate,
@@ -458,13 +489,14 @@ export function syncProjectToSequence(
       layout.mappedPositions,
       project.settings.showSprinzlOverlay,
     );
+    const labeledNodes = preservePositionLabels(renderedNodes, project.nucleotides);
     const renderedStems = filterStemsToRenderedNodes(layout.stems, renderedNodes);
-    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, renderedNodes);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, labeledNodes);
 
     return {
       ...project,
       sequence: nextSequence,
-      nucleotides: renderedNodes,
+      nucleotides: labeledNodes,
       stems: renderedStems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
@@ -475,12 +507,13 @@ export function syncProjectToSequence(
 
   if (template.id === "rrna_5s_secondary_structure") {
     const layout = buildRrna5SLayout(nextSequence);
-    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+    const labeledNodes = preservePositionLabels(layout.nucleotides, project.nucleotides);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, labeledNodes);
 
     return {
       ...project,
       sequence: nextSequence,
-      nucleotides: layout.nucleotides,
+      nucleotides: labeledNodes,
       stems: layout.stems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
@@ -512,7 +545,7 @@ export function syncProjectToSequence(
         y: existing?.y ?? fallback.y,
         sequenceIndex: index + 1,
         originalToken: base,
-        positionLabel: String(index + 1),
+        positionLabel: existing?.positionLabel ?? String(index + 1),
         status: "present" as const,
         visible: existing?.visible ?? true,
         fontSize: existing?.fontSize,

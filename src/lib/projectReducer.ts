@@ -6,7 +6,7 @@ export type ProjectAction =
   | { type: "update_title"; title: string }
   | { type: "update_molecule_type"; moleculeType: RnaProject["moleculeType"] }
   | { type: "update_setting"; key: keyof RnaSettings; value: RnaSettings[keyof RnaSettings] }
-  | { type: "update_nucleotide"; pos: number; key: "base" | "x" | "y" | "color" | "fontSize" | "visible"; value: string | number | boolean | undefined }
+  | { type: "update_nucleotide"; pos: number; key: "base" | "x" | "y" | "color" | "fontSize" | "visible" | "positionLabel"; value: string | number | boolean | undefined }
   | { type: "update_nucleotides"; nucleotides: Array<{ pos: number; x: number; y: number }> }
   | { type: "replace_stems"; stems: RnaProject["stems"] }
   | { type: "add_stem"; stem: RnaProject["stems"][number] }

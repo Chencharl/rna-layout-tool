@@ -13,31 +13,39 @@ export function serializeProject(project: RnaProject): string {
   return JSON.stringify(project, null, 2);
 }
 
+function normalizeProjectTheme(theme: unknown): RnaProject["settings"]["theme"] {
+  return theme === "light" ? "light" : "publication";
+}
+
 export function serializeFigureData(project: RnaProject): string {
+  const getSlotLabel = (pos: number) => {
+    const nucleotide = project.nucleotides.find((entry) => entry.pos === pos);
+    return nucleotide
+      ? nucleotide.positionLabel || nucleotide.sprinzlLabel || nucleotide.pos.toString()
+      : pos.toString();
+  };
+
   return JSON.stringify(
     {
       sequence: project.sequence,
       slotMapping: project.nucleotides.map((nucleotide) => ({
         sequenceIndex: nucleotide.sequenceIndex,
-        slot: nucleotide.positionLabel ?? nucleotide.sprinzlLabel ?? nucleotide.pos.toString(),
+        slot: nucleotide.positionLabel || nucleotide.sprinzlLabel || nucleotide.pos.toString(),
+        referenceSlot: nucleotide.sprinzlLabel ?? null,
         base: nucleotide.base,
         modification: nucleotide.modification ?? null,
         x: nucleotide.x,
         y: nucleotide.y,
       })),
       pairEdges: project.stems.map((stem) => ({
-        slotA:
-          project.nucleotides.find((nucleotide) => nucleotide.pos === stem.from)?.positionLabel ??
-          stem.from.toString(),
-        slotB:
-          project.nucleotides.find((nucleotide) => nucleotide.pos === stem.to)?.positionLabel ??
-          stem.to.toString(),
+        slotA: getSlotLabel(stem.from),
+        slotB: getSlotLabel(stem.to),
         type: stem.pairStatus ?? "custom",
       })),
       modifications: project.nucleotides
         .filter((nucleotide) => Boolean(nucleotide.modification))
         .map((nucleotide) => ({
-          slot: nucleotide.positionLabel ?? nucleotide.sprinzlLabel ?? nucleotide.pos.toString(),
+          slot: nucleotide.positionLabel || nucleotide.sprinzlLabel || nucleotide.pos.toString(),
           type: nucleotide.modification,
         })),
       annotations: project.annotations,
@@ -85,6 +93,7 @@ export function parseProjectFile(text: string): {
     const project = parsed as RnaProject;
     project.settings = {
       ...project.settings,
+      theme: normalizeProjectTheme(project.settings.theme),
       showOnlyModifiedPositions: project.settings.showOnlyModifiedPositions ?? false,
       showSprinzlOverlay: project.settings.showSprinzlOverlay ?? false,
       runSprinzlValidation: project.settings.runSprinzlValidation ?? false,

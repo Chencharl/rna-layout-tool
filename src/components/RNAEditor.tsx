@@ -678,6 +678,17 @@ export function RNAEditor() {
               }
               dispatch({ type: "update_nucleotide", pos: selectedPos, key: "base", value });
             }}
+            onPositionLabelChange={(value) => {
+              if (!selectedPos) {
+                return;
+              }
+              dispatch({
+                type: "update_nucleotide",
+                pos: selectedPos,
+                key: "positionLabel",
+                value,
+              });
+            }}
             onCoordinateChange={(key, value) => {
               if (!selectedPos || Number.isNaN(value)) {
                 return;

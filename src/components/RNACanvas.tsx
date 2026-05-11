@@ -60,24 +60,6 @@ const THEME_STYLES = {
     circleFill: "transparent",
     selectedFill: "rgba(250, 204, 21, 0.24)",
   },
-  slides: {
-    background: "#f7fcff",
-    stroke: "#4b5563",
-    base: "#082f49",
-    number: "#4b5563",
-    accent: "#ea580c",
-    circleFill: "#ffffff",
-    selectedFill: "#ffedd5",
-  },
-  base_only: {
-    background: "#ffffff",
-    stroke: "#111827",
-    base: "#050505",
-    number: "#111827",
-    accent: "#111827",
-    circleFill: "transparent",
-    selectedFill: "rgba(250, 204, 21, 0.24)",
-  },
 } as const;
 
 function trimLine(
@@ -317,8 +299,7 @@ export function RNACanvas({
           (right.slotOrder ?? Number.MAX_SAFE_INTEGER) ||
         left.pos - right.pos,
     );
-  const isBaseOnly =
-    project.settings.theme === "publication" || project.settings.theme === "base_only";
+  const isBaseOnly = project.settings.theme === "publication";
   const isPlainTextStructure = isBaseOnly || isFiveSRrna;
   const isStructureConstrained =
     project.renderMode === "structure_constrained_mode" ||

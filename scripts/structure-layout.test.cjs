@@ -20,6 +20,7 @@ execFileSync(
     "src/lib/types.ts",
     "src/lib/sprinzl.ts",
     "src/lib/templates.ts",
+    "src/lib/projectReducer.ts",
     "src/lib/defaultProject.ts",
     "src/lib/validation.ts",
     "--outDir",

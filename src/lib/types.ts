@@ -1,7 +1,7 @@
 export type MoleculeType = "tRNA" | "mRNA" | "rRNA" | "custom";
 export type NumberingMode = "raw" | "trna_standard";
 export type StemStyle = "line" | "dashed";
-export type EditorTheme = "light" | "publication" | "slides" | "base_only";
+export type EditorTheme = "light" | "publication";
 export type LabelKind = "modification" | "adduct" | "note";
 export type AnnotationSource =
   | "current_user_input"

@@ -10,6 +10,7 @@ type RNAInspectorProps = {
   onSelectPos: (pos: number) => void;
   onSelectLabel: (id: string | null) => void;
   onBaseChange: (value: string) => void;
+  onPositionLabelChange: (value: string) => void;
   onCoordinateChange: (key: "x" | "y", value: number) => void;
   onCreateMark: (kind: "modification" | "adduct" | "note", text: string, color?: string) => void;
   onUpdateLabel: (id: string, key: "text" | "color" | "dx" | "dy", value: string | number) => void;
@@ -27,6 +28,7 @@ export function RNAInspector({
   onSelectPos,
   onSelectLabel,
   onBaseChange,
+  onPositionLabelChange,
   onCoordinateChange,
   onCreateMark,
   onUpdateLabel,
@@ -71,8 +73,16 @@ export function RNAInspector({
         </label>
 
         <label className="field">
-          <span>Sprinzl label</span>
-          <input value={nucleotide?.sprinzlLabel ?? ""} disabled />
+          <span>Display position label</span>
+          <input
+            value={nucleotide?.positionLabel ?? ""}
+            placeholder="Manual label, e.g. 17A or 20B"
+            onChange={(event) => onPositionLabelChange(event.target.value)}
+            disabled={!nucleotide}
+          />
+          {nucleotide?.sprinzlLabel ? (
+            <small>Reference slot: {nucleotide.sprinzlLabel}</small>
+          ) : null}
         </label>
 
         <label className="field">

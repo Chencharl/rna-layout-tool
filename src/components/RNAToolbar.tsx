@@ -209,8 +209,6 @@ export function RNAToolbar({
           >
             <option value="light">Light</option>
             <option value="publication">Publication</option>
-            <option value="slides">Slides</option>
-            <option value="base_only">Minimal</option>
           </select>
         </label>
 
