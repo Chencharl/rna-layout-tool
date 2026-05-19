@@ -50,6 +50,7 @@ export type RnaRenderMode =
   | "expanded_variable"
   | "long_variable_arm"
   | "rrna_5s_template"
+  | "rrna_5_8s_template"
   | "structure_constrained_mode"
   | "atypical_mode";
 
