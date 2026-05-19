@@ -3,6 +3,7 @@ import {
 } from "./biology";
 import { getRenderableBase } from "./annotations";
 import { buildRrna5SLayout, RRNA_5S_TEMPLATE_ROWS } from "./rrna5s";
+import { buildRrna5_8sLayout, RRNA_5_8S_CANONICAL_LENGTH } from "./rrna5_8s";
 import { buildSprinzlTRnaLayout } from "./sprinzl";
 import type { RnaNucleotide, RnaProject, RnaStem, RnaTemplate } from "./types";
 
@@ -195,6 +196,16 @@ const RRNA_5S_TEMPLATE: RnaTemplate = {
   ),
 };
 
+const RRNA_5_8S_TEMPLATE: RnaTemplate = {
+  id: "rrna_5_8s_secondary_structure",
+  name: "rRNA 5.8S Secondary Structure",
+  moleculeType: "rRNA",
+  length: RRNA_5_8S_CANONICAL_LENGTH,
+  numberingMode: "raw",
+  nucleotides: [],
+  stems: [],
+};
+
 const FREE_CANVAS_TEMPLATE: RnaTemplate = {
   id: "free_canvas",
   name: "Free canvas",
@@ -233,6 +244,7 @@ export const BUILTIN_TEMPLATES: RnaTemplate[] = [
   LINEAR_GENERIC_TEMPLATE,
   MIRNA_HAIRPIN_TEMPLATE,
   RRNA_5S_TEMPLATE,
+  RRNA_5_8S_TEMPLATE,
   FREE_CANVAS_TEMPLATE,
 ];
 
@@ -443,6 +455,28 @@ export function remapProjectToTemplate(
     };
   }
 
+  if (template.id === "rrna_5_8s_secondary_structure") {
+    const layout = buildRrna5_8sLayout(project.sequence);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+
+    return {
+      ...project,
+      moleculeType: "rRNA",
+      numberingMode: template.numberingMode ?? project.numberingMode,
+      templateId: template.id,
+      nucleotides: layout.nucleotides,
+      stems: layout.stems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: "rrna_5_8s_template",
+      unassignedExtraBases: [],
+      settings: {
+        ...project.settings,
+        canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+      },
+    };
+  }
+
   const resolvedTemplate = materializeTemplate(template, project.sequence.length);
   const preservedLabels = filterCurrentAnnotations(project.labels, project.sequence.length);
 
@@ -519,6 +553,27 @@ export function syncProjectToSequence(
       mappingWarnings: layout.warnings,
       renderMode: "rrna_5s_template",
       unassignedExtraBases: [],
+    };
+  }
+
+  if (template.id === "rrna_5_8s_secondary_structure") {
+    const layout = buildRrna5_8sLayout(nextSequence);
+    const labeledNodes = preservePositionLabels(layout.nucleotides, project.nucleotides);
+    const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, labeledNodes);
+
+    return {
+      ...project,
+      sequence: nextSequence,
+      nucleotides: labeledNodes,
+      stems: layout.stems,
+      labels: preservedLabels,
+      mappingWarnings: layout.warnings,
+      renderMode: "rrna_5_8s_template",
+      unassignedExtraBases: [],
+      settings: {
+        ...project.settings,
+        canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+      },
     };
   }
 
