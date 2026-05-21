@@ -9,8 +9,8 @@ export function createDefaultProject(): RnaProject {
 
   return remapProjectToTemplate(
     {
-      id: "phe-trna-working-layout",
-      title: "Phe tRNA working layout",
+      id: "rna-layout",
+      title: "RNA Layout",
       moleculeType: "tRNA",
       sequence: DEFAULT_SEQUENCE.split(""),
       numberingMode: "trna_standard",
