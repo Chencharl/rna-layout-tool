@@ -23,6 +23,7 @@ execFileSync(
     "src/lib/projectReducer.ts",
     "src/lib/defaultProject.ts",
     "src/lib/validation.ts",
+    "src/lib/bubbleStyle.ts",
     "--outDir",
     outDir,
     "--module",
@@ -860,5 +861,105 @@ deterministicSnapshots.slice(1).forEach((snapshot, index) => {
     `Sprinzl slot layout is deterministic on rebuild ${index + 2}`,
   );
 });
+
+
+// --- Bubble display theme -------------------------------------------------
+const {
+  BUBBLE_GAP,
+  BUBBLE_MAX_RADIUS,
+  buildBubbleLabelLayout,
+  formatBubbleModification,
+  getBubbleRadius,
+  isAnticodonNucleotide,
+  spreadOverlappingBubbles,
+} = require(path.join(outDir, "bubbleStyle.js"));
+
+function assertNoBubbleOverlap(positions, radius, label) {
+  const points = [...positions.values()];
+  for (let left = 0; left < points.length; left += 1) {
+    for (let right = left + 1; right < points.length; right += 1) {
+      const distance = Math.hypot(points[left].x - points[right].x, points[left].y - points[right].y);
+      assert.ok(distance >= radius * 2, `${label}: bubbles ${left} and ${right} overlap (${distance.toFixed(1)})`);
+    }
+  }
+}
+
+// Yeast tRNA-Phe (public reference sequence) with its 14 known modifications as lab tokens.
+const yeastPheTokens = 'GCGGAUUUALCUCAGDDGGGAGAGCRCCAGABU#AAYAP?UGGAG7UC?UGUGTPCG"UCCACAGAAUUCGCACCA'.split("");
+assert.equal(yeastPheTokens.length, 76, "yeast tRNA-Phe has 76 positions");
+const yeastPheTemplate = getTemplateById("trna_classic", BUILTIN_TEMPLATES);
+const yeastPheProject = syncProjectToSequence(createDefaultProject(), yeastPheTokens, yeastPheTemplate);
+const yeastPheModified = yeastPheProject.nucleotides.filter((nucleotide) => nucleotide.modification);
+assert.equal(yeastPheModified.length, 14, "yeast tRNA-Phe maps 14 modified positions");
+
+const bubbleRadius = getBubbleRadius(yeastPheProject.nucleotides, yeastPheProject.stems);
+assert.ok(bubbleRadius > 10 && bubbleRadius <= BUBBLE_MAX_RADIUS, "template spacing allows a readable bubble radius");
+const bubblePositions = spreadOverlappingBubbles(yeastPheProject.nucleotides, yeastPheProject.stems, bubbleRadius);
+assert.equal(bubblePositions.size, yeastPheProject.nucleotides.length, "every nucleotide gets a bubble");
+assertNoBubbleOverlap(bubblePositions, bubbleRadius, "yeast tRNA-Phe");
+yeastPheProject.stems.forEach((stem) => {
+  [stem.from, stem.to].forEach((pos) => {
+    const stored = yeastPheProject.nucleotides.find((nucleotide) => nucleotide.pos === pos);
+    assert.deepEqual(bubblePositions.get(pos), { x: stored.x, y: stored.y }, "paired bases keep template coordinates");
+  });
+});
+
+assert.deepEqual(
+  yeastPheProject.nucleotides.filter(isAnticodonNucleotide).map((nucleotide) => nucleotide.positionLabel),
+  ["34", "35", "36"],
+  "anticodon bubbles are positions 34-36",
+);
+assert.equal(formatBubbleModification("psi"), "Ψ", "psi is printed as Ψ");
+assert.equal(formatBubbleModification("m1psi"), "m1Ψ", "psi inside a longer symbol is printed as Ψ");
+
+const bubbleLabelText = new Map(
+  yeastPheModified.map((nucleotide) => [
+    nucleotide.pos,
+    `${formatBubbleModification(nucleotide.modification)} ${nucleotide.positionLabel}`,
+  ]),
+);
+const bubbleLabels = buildBubbleLabelLayout(
+  yeastPheProject.nucleotides,
+  yeastPheProject.stems,
+  bubblePositions,
+  bubbleRadius,
+  bubbleLabelText,
+);
+assert.equal(bubbleLabels.size, 14, "every modified position gets an outside label");
+const bubbleLabelBoxes = [];
+bubbleLabels.forEach((placement, pos) => {
+  const width = bubbleLabelText.get(pos).length * 12 * 0.6;
+  const left = placement.anchor === "start" ? placement.x : placement.anchor === "end" ? placement.x - width : placement.x - width / 2;
+  const box = { left, right: left + width, top: placement.y - 7, bottom: placement.y + 7 };
+  bubblePositions.forEach((centre, otherPos) => {
+    const nearestX = Math.max(box.left, Math.min(centre.x, box.right));
+    const nearestY = Math.max(box.top, Math.min(centre.y, box.bottom));
+    assert.ok(
+      Math.hypot(centre.x - nearestX, centre.y - nearestY) >= bubbleRadius,
+      `label at ${pos} must not cover bubble ${otherPos}`,
+    );
+  });
+  bubbleLabelBoxes.forEach((other) => {
+    assert.ok(
+      !(box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top),
+      `label at ${pos} must not cover another label`,
+    );
+  });
+  bubbleLabelBoxes.push(box);
+});
+
+// Crowded unpaired bases are nudged apart; stored coordinates are not mutated.
+const crowded = [
+  { pos: 1, base: "G", x: 100, y: 100 },
+  { pos: 2, base: "A", x: 104, y: 100 },
+  { pos: 3, base: "U", x: 108, y: 100 },
+  { pos: 4, base: "C", x: 200, y: 100 },
+];
+const crowdedStems = [{ from: 1, to: 4 }];
+const crowdedPositions = spreadOverlappingBubbles(crowded, crowdedStems, 10);
+assertNoBubbleOverlap(crowdedPositions, 10, "crowded loop");
+assert.deepEqual(crowdedPositions.get(1), { x: 100, y: 100 }, "paired base stays fixed while free bases move");
+assert.equal(crowded[1].x, 104, "input coordinates are not mutated");
+assert.ok(BUBBLE_GAP > 0, "bubbles keep a visible gap");
 
 console.log("structure layout tests passed");

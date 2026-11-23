@@ -14,7 +14,7 @@ export function serializeProject(project: RnaProject): string {
 }
 
 function normalizeProjectTheme(theme: unknown): RnaProject["settings"]["theme"] {
-  return theme === "light" ? "light" : "publication";
+  return theme === "light" || theme === "bubble" ? theme : "publication";
 }
 
 export function serializeFigureData(project: RnaProject): string {

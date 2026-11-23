@@ -73,10 +73,21 @@ Numbers in modification symbols are rendered as superscripts on the canvas, for 
 
 ## Display Themes
 
-Only two themes are kept intentionally:
+Three themes are available:
 
 - `Publication`: plain text, clean pairing lines, manuscript-friendly output.
 - `Light`: interactive editing view with visible nucleotide handles.
+- `Bubble`: one circle per nucleotide with the base letter inside, a thin backbone, a line for Watson-Crick pairs and a dot for G·U pairs. Modified positions are outlined in red and labelled outside the figure; anticodon positions 34-36 are blue. Turn on `Show modified positions` to add the position number to each modification label.
+
+![Yeast tRNA-Phe in the Bubble theme](docs/trna-phe-bubble.svg)
+
+The figure above is an unedited `Export SVG` of yeast tRNA-Phe (a public reference sequence) with its 14 known modifications. To reproduce it, paste this into the sequence box with the `tRNA Cloverleaf` preset and pick the `Bubble` theme:
+
+```text
+G C G G A U U U A m2G C U C A G D D G G G A G A G C m22G C C A G A Cm U Gm A A yW A psi m5C U G G A G m7G U C m5C U G U G m5U psi C G m1A U C C A C A G A A U U C G C A C C A
+```
+
+In the Bubble theme, unpaired bases that would overlap are nudged apart for display only; stored coordinates and paired bases keep their template positions.
 
 Older project JSON files using removed themes are normalized to `Publication` on import.
 
@@ -102,7 +113,7 @@ npm run start
 npm run test:structure
 ```
 
-The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, and the fixed 5S rRNA template.
+The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, the fixed 5S rRNA template, and the Bubble theme geometry (no overlapping bubbles or labels on yeast tRNA-Phe).
 
 ## Export Figures
 
