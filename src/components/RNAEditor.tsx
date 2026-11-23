@@ -637,9 +637,27 @@ export function RNAEditor() {
           });
         }}
         onToggleSetting={handleToggleSetting}
-        onThemeChange={(value) =>
-          dispatch({ type: "update_setting", key: "theme", value })
-        }
+        onThemeChange={(value) => {
+          const isRrnaTemplate =
+            project.templateId === "rrna_5s_secondary_structure" ||
+            project.templateId === "rrna_5_8s_secondary_structure";
+          const crossesBubble = (value === "bubble") !== (project.settings.theme === "bubble");
+          const template = getTemplateById(project.templateId, templates);
+
+          // rRNA templates use a different arrangement in the Bubble theme, so
+          // entering or leaving it rebuilds the scaffold for the new theme.
+          if (isRrnaTemplate && crossesBubble && template) {
+            replaceProject(
+              remapProjectToTemplate(
+                { ...project, settings: { ...project.settings, theme: value } },
+                template,
+              ),
+            );
+            return;
+          }
+
+          dispatch({ type: "update_setting", key: "theme", value });
+        }}
         onFontSettingChange={(key, value) =>
           dispatch({ type: "update_setting", key, value })
         }

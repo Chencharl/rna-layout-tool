@@ -2,6 +2,15 @@
 
 import { useState } from "react";
 
+import {
+  BUBBLE_LABEL_FONT_SIZE,
+  BUBBLE_MAX_RADIUS,
+  buildBubbleLabelLayout,
+  formatBubbleModification,
+  getBubbleRadius,
+  isAnticodonNucleotide,
+  spreadOverlappingBubbles,
+} from "@/lib/bubbleStyle";
 import { getDisplayPosition } from "@/lib/numbering";
 import type { RnaLabel, RnaProject, RnaStem } from "@/lib/types";
 
@@ -60,6 +69,24 @@ const THEME_STYLES = {
     circleFill: "transparent",
     selectedFill: "rgba(250, 204, 21, 0.24)",
   },
+  bubble: {
+    background: "#ffffff",
+    stroke: "#afb8c1",
+    base: "#1f2328",
+    number: "#59636e",
+    accent: "#8c959f",
+    circleFill: "#f6f8fa",
+    selectedFill: "#fff8c5",
+  },
+} as const;
+
+const BUBBLE_COLORS = {
+  modified: "#cf222e",
+  modifiedFill: "#ffebe9",
+  anticodon: "#0969da",
+  anticodonFill: "#ddf4ff",
+  missing: "#d0d7de",
+  selected: "#bf8700",
 } as const;
 
 function trimLine(
@@ -273,11 +300,27 @@ export function RNACanvas({
     0,
     Math.min(project.settings.canvasHeight - viewHeight, viewportCenter.y - viewHeight / 2),
   );
-  const orderedNucleotides = [...project.nucleotides].sort((left, right) => left.pos - right.pos);
+  const isBubble = project.settings.theme === "bubble";
+  const bubbleRadius = isBubble
+    ? getBubbleRadius(project.nucleotides, project.stems)
+    : BUBBLE_MAX_RADIUS;
+  const bubblePositions = isBubble
+    ? spreadOverlappingBubbles(project.nucleotides, project.stems, bubbleRadius)
+    : null;
+  // Bubble style may nudge unpaired bases apart for display; stored coordinates stay untouched.
+  const canvasNucleotides = bubblePositions
+    ? project.nucleotides.map((nucleotide) => {
+        const point = bubblePositions.get(nucleotide.pos);
+        return point ? { ...nucleotide, x: point.x, y: point.y } : nucleotide;
+      })
+    : project.nucleotides;
+  const orderedNucleotides = [...canvasNucleotides].sort((left, right) => left.pos - right.pos);
   const isConventionalTRna =
     project.moleculeType === "tRNA" && project.templateId === "trna_classic";
   const isFiveSRrna = project.templateId === "rrna_5s_secondary_structure";
-  const sequenceOrderedNucleotides = [...project.nucleotides]
+  const isRrnaTemplate =
+    isFiveSRrna || project.templateId === "rrna_5_8s_secondary_structure";
+  const sequenceOrderedNucleotides = [...canvasNucleotides]
     .filter((nucleotide) => nucleotide.sequenceIndex !== undefined)
     .sort(
       (left, right) =>
@@ -285,7 +328,7 @@ export function RNACanvas({
           (right.sequenceIndex ?? Number.MAX_SAFE_INTEGER) ||
         left.pos - right.pos,
     );
-  const slotOrderedNucleotides = [...project.nucleotides]
+  const slotOrderedNucleotides = [...canvasNucleotides]
     .filter(
       (nucleotide) =>
         nucleotide.sequenceIndex !== undefined &&
@@ -300,7 +343,7 @@ export function RNACanvas({
         left.pos - right.pos,
     );
   const isBaseOnly = project.settings.theme === "publication";
-  const isPlainTextStructure = isBaseOnly || isFiveSRrna;
+  const isPlainTextStructure = !isBubble && (isBaseOnly || isFiveSRrna);
   const isStructureConstrained =
     project.renderMode === "structure_constrained_mode" ||
     project.renderMode === "atypical_mode";
@@ -338,6 +381,44 @@ export function RNACanvas({
     x: project.settings.canvasWidth / 2,
     y: project.settings.canvasHeight / 2,
   };
+  const bubbleLabelText = new Map<number, string>();
+  if (isBubble) {
+    canvasNucleotides.forEach((nucleotide) => {
+      if (nucleotide.status === "missing") {
+        return;
+      }
+
+      const positionText =
+        nucleotide.positionLabel ??
+        nucleotide.sprinzlLabel ??
+        nucleotide.sequenceIndex?.toString() ??
+        getDisplayPosition(nucleotide.pos, project.numberingMode);
+
+      if (nucleotide.modification) {
+        const showPosition =
+          project.settings.showPositionNumbers || project.settings.showOnlyModifiedPositions;
+        bubbleLabelText.set(
+          nucleotide.pos,
+          `${formatBubbleModification(nucleotide.modification)}${showPosition && positionText ? ` ${positionText}` : ""}`,
+        );
+      } else if (project.settings.showPositionNumbers && positionText) {
+        bubbleLabelText.set(nucleotide.pos, positionText);
+      } else if (isRrnaTemplate && nucleotide.positionLabel) {
+        // rRNA templates label every tenth position; keep those ticks in bubble figures.
+        bubbleLabelText.set(nucleotide.pos, nucleotide.positionLabel);
+      }
+    });
+  }
+  const bubbleLabelLayout =
+    isBubble && bubblePositions
+      ? buildBubbleLabelLayout(
+          canvasNucleotides,
+          project.stems,
+          bubblePositions,
+          bubbleRadius,
+          bubbleLabelText,
+        )
+      : null;
   const firstNucleotide = backboneSourceNodes[0];
   const secondNucleotide = backboneSourceNodes[1];
   const lastNucleotide = backboneSourceNodes.at(-1);
@@ -506,7 +587,23 @@ export function RNACanvas({
             fill={theme.background}
             rx="24"
           />
-          {isStructureConstrained && !isPlainTextStructure ? (
+          {isBubble ? (
+            <g pointerEvents="none">
+              {backboneSegments.map((segment) => (
+                <line
+                  key={`bubble-backbone-${segment.from.pos}-${segment.to.pos}`}
+                  x1={segment.from.x}
+                  y1={segment.from.y}
+                  x2={segment.to.x}
+                  y2={segment.to.y}
+                  stroke={theme.stroke}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              ))}
+            </g>
+          ) : null}
+          {isStructureConstrained && !isPlainTextStructure && !isBubble ? (
             <g pointerEvents="none">
               {backboneSegments.map((segment) => (
                 <line
@@ -523,7 +620,7 @@ export function RNACanvas({
               ))}
             </g>
           ) : null}
-          {isConventionalTRna && tRnaBackbonePath && !isPlainTextStructure && !isStructureConstrained ? (
+          {isConventionalTRna && tRnaBackbonePath && !isPlainTextStructure && !isStructureConstrained && !isBubble ? (
             <path
               d={tRnaBackbonePath}
               fill="none"
@@ -535,7 +632,7 @@ export function RNACanvas({
               pointerEvents="none"
             />
           ) : null}
-          {!isConventionalTRna && backbonePath && !isPlainTextStructure && !isStructureConstrained ? (
+          {!isConventionalTRna && backbonePath && !isPlainTextStructure && !isStructureConstrained && !isBubble ? (
             <path
               d={backbonePath}
               fill="none"
@@ -549,11 +646,52 @@ export function RNACanvas({
           ) : null}
           {project.settings.showStemLines &&
             project.stems.map((stem) => {
-              const from = project.nucleotides.find((nucleotide) => nucleotide.pos === stem.from);
-              const to = project.nucleotides.find((nucleotide) => nucleotide.pos === stem.to);
+              const from = canvasNucleotides.find((nucleotide) => nucleotide.pos === stem.from);
+              const to = canvasNucleotides.find((nucleotide) => nucleotide.pos === stem.to);
 
               if (!from || !to) {
                 return null;
+              }
+
+              if (isBubble) {
+                const removeStem = (event: React.MouseEvent<SVGElement>) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRemoveStem(stem);
+                };
+
+                if (stem.pairStatus === "wobble" || stem.pairStatus === "custom") {
+                  // G·U pairs are a filled dot; other non-Watson-Crick template pairs an open circle.
+                  const isWobble = stem.pairStatus === "wobble";
+                  return (
+                    <circle
+                      key={`${stem.from}-${stem.to}`}
+                      cx={(from.x + to.x) / 2}
+                      cy={(from.y + to.y) / 2}
+                      r={isWobble ? "2.8" : "3.2"}
+                      fill={isWobble ? theme.accent : theme.background}
+                      stroke={theme.accent}
+                      strokeWidth={isWobble ? "0" : "1.4"}
+                      pointerEvents={mode === "edit-bonds" ? "visible" : "none"}
+                      onContextMenu={removeStem}
+                    />
+                  );
+                }
+
+                return (
+                  <line
+                    key={`${stem.from}-${stem.to}`}
+                    {...trimLine(from, to, bubbleRadius + 3)}
+                    stroke={stem.pairStatus === "mismatch" ? "#dc2626" : theme.accent}
+                    strokeDasharray={
+                      stem.style === "dashed" || stem.pairStatus === "mismatch" ? "4 4" : undefined
+                    }
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    pointerEvents={mode === "edit-bonds" ? "visibleStroke" : "none"}
+                    onContextMenu={removeStem}
+                  />
+                );
               }
 
               return (
@@ -578,14 +716,50 @@ export function RNACanvas({
                 />
               );
             })}
-          {project.nucleotides.map((nucleotide) => (
+          {canvasNucleotides.map((nucleotide) => (
             <g
               key={nucleotide.pos}
               onMouseDown={(event) =>
                 handleNucleotideMouseDown(event, nucleotide.pos, nucleotide.x, nucleotide.y)
               }
             >
-              {isPlainTextStructure ? (
+              {isBubble ? (
+                <circle
+                  cx={nucleotide.x}
+                  cy={nucleotide.y}
+                  r={bubbleRadius}
+                  fill={
+                    selectedPos === nucleotide.pos
+                      ? theme.selectedFill
+                      : nucleotide.status === "missing"
+                        ? "#ffffff"
+                        : nucleotide.modification
+                          ? BUBBLE_COLORS.modifiedFill
+                          : isAnticodonNucleotide(nucleotide)
+                            ? BUBBLE_COLORS.anticodonFill
+                            : theme.circleFill
+                  }
+                  stroke={
+                    selectedPos === nucleotide.pos
+                      ? BUBBLE_COLORS.selected
+                      : nucleotide.status === "missing"
+                        ? BUBBLE_COLORS.missing
+                        : nucleotide.modification
+                          ? BUBBLE_COLORS.modified
+                          : isAnticodonNucleotide(nucleotide)
+                            ? BUBBLE_COLORS.anticodon
+                            : theme.stroke
+                  }
+                  strokeDasharray={nucleotide.status === "missing" ? "3 4" : undefined}
+                  strokeWidth={
+                    selectedPos === nucleotide.pos
+                      ? "3"
+                      : nucleotide.modification || isAnticodonNucleotide(nucleotide)
+                        ? "2"
+                        : "1.4"
+                  }
+                />
+              ) : isPlainTextStructure ? (
                 <circle
                   cx={nucleotide.x}
                   cy={nucleotide.y}
@@ -640,16 +814,28 @@ export function RNACanvas({
                 y={nucleotide.y}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                  fontSize={getNucleotideTextSize(
-                  nucleotide,
-                  nucleotide.fontSize ??
-                    (isConventionalTRna
-                      ? isPlainTextStructure
-                        ? Math.max(project.settings.nucleotideFontSize + 1, 15)
-                        : Math.max(project.settings.nucleotideFontSize - 2, 13)
-                      : project.settings.nucleotideFontSize),
-                )}
-                fill={getNucleotideTextFill(nucleotide, theme.base)}
+                fontSize={
+                  isBubble
+                    ? Math.max(8, Math.min(project.settings.nucleotideFontSize - 3, bubbleRadius))
+                    : getNucleotideTextSize(
+                        nucleotide,
+                        nucleotide.fontSize ??
+                          (isConventionalTRna
+                            ? isPlainTextStructure
+                              ? Math.max(project.settings.nucleotideFontSize + 1, 15)
+                              : Math.max(project.settings.nucleotideFontSize - 2, 13)
+                            : project.settings.nucleotideFontSize),
+                      )
+                }
+                fill={
+                  isBubble
+                    ? nucleotide.modification
+                      ? BUBBLE_COLORS.modified
+                      : isAnticodonNucleotide(nucleotide)
+                        ? BUBBLE_COLORS.anticodon
+                        : (nucleotide.color ?? theme.base)
+                    : getNucleotideTextFill(nucleotide, theme.base)
+                }
                 fontFamily={
                   isConventionalTRna
                     ? "'Helvetica Neue', 'Arial', sans-serif"
@@ -659,7 +845,9 @@ export function RNACanvas({
               >
                 {nucleotide.status === "missing"
                   ? ""
-                  : renderSymbolWithSuperscriptDigits(
+                  : isBubble
+                    ? nucleotide.base
+                    : renderSymbolWithSuperscriptDigits(
                       getNucleotideDisplayText(nucleotide),
                       Boolean(nucleotide.modification),
                     )}
@@ -667,11 +855,11 @@ export function RNACanvas({
               <circle
                 cx={nucleotide.x}
                 cy={nucleotide.y}
-                r={isConventionalTRna ? tRnaNodeRadius : 18}
+                r={isBubble ? bubbleRadius : isConventionalTRna ? tRnaNodeRadius : 18}
                 fill="transparent"
                 stroke="transparent"
               />
-              {(project.settings.showPositionNumbers ||
+              {!isBubble && (project.settings.showPositionNumbers ||
                 isFiveSRrna ||
                 (project.settings.showOnlyModifiedPositions && nucleotide.modification)) && (
                 (() => {
@@ -719,8 +907,70 @@ export function RNACanvas({
               )}
             </g>
           ))}
+          {isBubble && bubbleLabelLayout ? (
+            <g pointerEvents="none">
+              {canvasNucleotides.map((nucleotide) => {
+                const placement = bubbleLabelLayout.get(nucleotide.pos);
+                const text = bubbleLabelText.get(nucleotide.pos);
+
+                if (!placement || !text) {
+                  return null;
+                }
+
+                if (!nucleotide.modification) {
+                  return (
+                    <text
+                      key={`bubble-number-${nucleotide.pos}`}
+                      x={placement.x}
+                      y={placement.y}
+                      textAnchor={placement.anchor}
+                      dominantBaseline="middle"
+                      fontSize={Math.max(project.settings.numberFontSize, 9)}
+                      fill={theme.number}
+                      fontFamily="'Helvetica Neue', 'Arial', sans-serif"
+                    >
+                      {text}
+                    </text>
+                  );
+                }
+
+                const symbol = formatBubbleModification(nucleotide.modification);
+                const positionText = text.slice(symbol.length).trim();
+
+                return (
+                  <g key={`bubble-label-${nucleotide.pos}`}>
+                    <line
+                      x1={placement.leaderFrom.x}
+                      y1={placement.leaderFrom.y}
+                      x2={placement.leaderTo.x}
+                      y2={placement.leaderTo.y}
+                      stroke={BUBBLE_COLORS.modified}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={placement.x}
+                      y={placement.y}
+                      textAnchor={placement.anchor}
+                      dominantBaseline="middle"
+                      fontSize={BUBBLE_LABEL_FONT_SIZE}
+                      fontWeight="700"
+                      fill={BUBBLE_COLORS.modified}
+                      fontFamily="'Helvetica Neue', 'Arial', sans-serif"
+                    >
+                      {renderSymbolWithSuperscriptDigits(symbol, true)}
+                      {positionText ? (
+                        <tspan fontWeight="400" fontSize="80%" fill={theme.number}>
+                          {` ${positionText}`}
+                        </tspan>
+                      ) : null}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          ) : null}
           {project.labels.map((label) => {
-            const target = project.nucleotides.find((nucleotide) => nucleotide.pos === label.pos);
+            const target = canvasNucleotides.find((nucleotide) => nucleotide.pos === label.pos);
 
             if (!target) {
               return null;
@@ -805,7 +1055,7 @@ export function RNACanvas({
           {project.annotations.map((annotation) => {
             const target =
               annotation.position !== undefined
-                ? project.nucleotides.find((nucleotide) => nucleotide.pos === annotation.position)
+                ? canvasNucleotides.find((nucleotide) => nucleotide.pos === annotation.position)
                 : undefined;
             const x = target ? target.x + 18 : annotation.x;
             const y = target ? target.y - 18 : annotation.y;

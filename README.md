@@ -50,6 +50,25 @@ position | base | x | y | paired_with | region | optional label
 
 The first implementation targets 120 nt 5S rRNA. If the input sequence length is not 120, the app shows a warning and keeps the fixed template visible instead of drawing a broken partial structure.
 
+The 5S pairing is taken from a published reference and is not predicted by the tool:
+
+- Sequence: human 5S rRNA, positions 1-120 (GenBank X71804.1, the human entry in the Rfam RF00001 seed alignment).
+- Structure: the Rfam RF00001 consensus secondary structure (published structure, PMID 11283358) projected onto that sequence. It has 34 base pairs, 30 Watson-Crick and 4 G·U on the human sequence, with helix I pairing 1-9 with 110-118.
+
+Template coordinates for the text themes are generated from that pairing. Sequences from other species are drawn on the same pairing; pairs that are not Watson-Crick or G·U for the pasted sequence are marked.
+
+## 5.8S rRNA Notes
+
+The 5.8S preset has 153 canonical positions: human 5.8S rRNA, GenBank U13369.1 positions 6624-6776 (RNAcentral URS00006CE1FB).
+
+The pairing is the published human structure and is not predicted by the tool. It is the secondary structure RNAcentral gives for that sequence, drawn by R2DT from the RiboVision template, which is derived from the three-dimensional structure of the ribosome: 20 base pairs, 19 Watson-Crick and 1 G·U. 19 of the 20 are also in the Rfam RF00002 comparative consensus (European LSU rRNA database, PMID 11125083).
+
+Positions 1-40 and 136-153 are unpaired in a standalone 5.8S figure. In the ribosome these ends pair with 28S rRNA.
+
+Input is aligned to the 153-nt reference by sequence identity, so extra bases at either end do not shift the template. The mature 157-nt human 5.8S maps with one extra 5′ base and three extra 3′ bases (CUU), drawn unpaired. When the input does not resemble the reference, the 3′ ends are aligned instead.
+
+Coordinates are generated from the pairing in every theme: stacked pairs are ladders, loops are circles, and the unpaired ends run around an open ring with the 5′ end descending on the left. The example images under `docs/` for 5.8S predate this pairing and need to be re-exported.
+
 ## Modification Input
 
 The sequence parser recognizes both standard bases and modification tokens. Examples:
@@ -73,10 +92,31 @@ Numbers in modification symbols are rendered as superscripts on the canvas, for 
 
 ## Display Themes
 
-Only two themes are kept intentionally:
+Three themes are available:
 
 - `Publication`: plain text, clean pairing lines, manuscript-friendly output.
 - `Light`: interactive editing view with visible nucleotide handles.
+- `Bubble`: one circle per nucleotide with the base letter inside, a thin backbone, a line for Watson-Crick pairs and a dot for G·U pairs. Modified positions are outlined in red and labelled outside the figure; anticodon positions 34-36 are blue. Turn on `Show modified positions` to add the position number to each modification label.
+
+![Yeast tRNA-Phe in the Bubble theme](docs/trna-phe-bubble.svg)
+
+The figure above is an unedited `Export SVG` of yeast tRNA-Phe (a public reference sequence) with its 14 known modifications. To reproduce it, paste this into the sequence box with the `tRNA Cloverleaf` preset and pick the `Bubble` theme:
+
+```text
+G C G G A U U U A m2G C U C A G D D G G G A G A G C m22G C C A G A Cm U Gm A A yW A psi m5C U G G A G m7G U C m5C U G U G m5U psi C G m1A U C C A C A G A A U U C G C A C C A
+```
+
+In the Bubble theme, unpaired bases that would overlap are nudged apart for display only; stored coordinates and paired bases keep their template positions.
+
+### Bubble theme on the rRNA presets
+
+The 5S and 5.8S presets generate their coordinates from the template's pairing map: stacked pairs become ladders, each loop becomes a circle, and a long unpaired exterior (the 5.8S leader and tail) runs around an open ring. The text themes use tighter spacing; the Bubble theme uses the same arrangement with room for one circle per base. Switching back to `Publication` or `Light` restores the text spacing. Entering or leaving Bubble on an rRNA preset rebuilds the scaffold, so manual drags made in the other arrangement are not carried across.
+
+| 5S rRNA | 5.8S rRNA |
+| --- | --- |
+| ![Human 5S rRNA in the Bubble theme](docs/rrna-5s-bubble.svg) | ![Human 5.8S rRNA in the Bubble theme](docs/rrna-5_8s-bubble.svg) |
+
+Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction. The 5S template follows the Rfam RF00001 reference, so the human 5S figure has no open circles. The 5.8S figure is the mature 157-nt human sequence; all 23 template pairs are Watson-Crick or G·U on it.
 
 Older project JSON files using removed themes are normalized to `Publication` on import.
 
@@ -102,7 +142,7 @@ npm run start
 npm run test:structure
 ```
 
-The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, and the fixed 5S rRNA template.
+The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, the fixed 5S rRNA template, the Bubble theme geometry (no overlapping bubbles or labels on yeast tRNA-Phe), and the Bubble arrangement of the 5S and 5.8S presets (no overlaps, pairing unchanged).
 
 ## Export Figures
 

@@ -23,6 +23,9 @@ execFileSync(
     "src/lib/projectReducer.ts",
     "src/lib/defaultProject.ts",
     "src/lib/validation.ts",
+    "src/lib/bubbleStyle.ts",
+    "src/lib/radialLayout.ts",
+    "src/lib/rrna5_8s.ts",
     "--outDir",
     outDir,
     "--module",
@@ -163,11 +166,56 @@ assert.ok(rrna5sLayout.stems.length > 25, "5S rRNA layout draws template-defined
 assert.deepEqual(
   rrna5sLayout.stems.slice(0, 3).map((stem) => [stem.from, stem.to]),
   [
-    [1, 120],
-    [2, 119],
-    [3, 118],
+    [1, 118],
+    [2, 117],
+    [3, 116],
   ],
-  "5S rRNA terminal stem keeps 5 prime and 3 prime ends paired near the template stem",
+  "5S rRNA helix I pairs 1-9 with 110-118, as in the Rfam RF00001 reference",
+);
+
+// The 5S template pairing comes from a published reference, not from a guess.
+const {
+  RRNA_5S_REFERENCE_SEQUENCE,
+  RRNA_5S_REFERENCE_STRUCTURE,
+} = require(path.join(outDir, "rrna5s.js"));
+assert.equal(RRNA_5S_REFERENCE_SEQUENCE.length, 120, "5S reference sequence covers 120 positions");
+assert.equal(RRNA_5S_REFERENCE_STRUCTURE.length, 120, "5S reference structure covers 120 positions");
+assert.deepEqual(
+  RRNA_5S_TEMPLATE_ROWS.map((row) => row.base).join(""),
+  RRNA_5S_REFERENCE_SEQUENCE,
+  "5S template placeholder bases are the human reference sequence",
+);
+const rrna5sReferenceLayout = buildRrna5SLayout(RRNA_5S_REFERENCE_SEQUENCE.split(""));
+assert.equal(rrna5sReferenceLayout.stems.length, 34, "5S reference structure has 34 base pairs");
+assert.deepEqual(
+  rrna5sReferenceLayout.stems.reduce((counts, stem) => {
+    counts[stem.pairStatus] = (counts[stem.pairStatus] ?? 0) + 1;
+    return counts;
+  }, {}),
+  { normal: 30, wobble: 4 },
+  "every 5S reference pair is Watson-Crick or G-U on the human sequence",
+);
+RRNA_5S_TEMPLATE_ROWS.forEach((row) => {
+  if (row.paired_with !== null) {
+    assert.equal(
+      RRNA_5S_TEMPLATE_ROWS[row.paired_with - 1].paired_with,
+      row.position,
+      `5S template pairing is symmetric at ${row.position}`,
+    );
+    assert.ok(row.region === "terminal_stem" || row.region === "internal_stem", "paired 5S positions are stem regions");
+  } else {
+    assert.ok(!row.region.endsWith("_stem"), "unpaired 5S positions are loop or junction regions");
+  }
+});
+assert.deepEqual(
+  RRNA_5S_TEMPLATE_ROWS.filter((row) => row.region === "terminal_stem").map((row) => row.position),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 110, 111, 112, 113, 114, 115, 116, 117, 118],
+  "5S terminal stem is helix I",
+);
+assert.equal(RRNA_5S_TEMPLATE_ROWS[119].paired_with, null, "5S position 120 is unpaired");
+assert.ok(
+  RRNA_5S_TEMPLATE_ROWS.every((row) => row.x >= 60 && row.x <= 1220 && row.y >= 60 && row.y <= 920),
+  "5S template coordinates fit the default canvas",
 );
 assert.deepEqual(
   rrna5sLayout.nucleotides
@@ -860,5 +908,313 @@ deterministicSnapshots.slice(1).forEach((snapshot, index) => {
     `Sprinzl slot layout is deterministic on rebuild ${index + 2}`,
   );
 });
+
+
+// --- Bubble display theme -------------------------------------------------
+const {
+  BUBBLE_GAP,
+  BUBBLE_MAX_RADIUS,
+  buildBubbleLabelLayout,
+  formatBubbleModification,
+  getBubbleRadius,
+  isAnticodonNucleotide,
+  spreadOverlappingBubbles,
+} = require(path.join(outDir, "bubbleStyle.js"));
+
+function assertNoBubbleOverlap(positions, radius, label) {
+  const points = [...positions.values()];
+  for (let left = 0; left < points.length; left += 1) {
+    for (let right = left + 1; right < points.length; right += 1) {
+      const distance = Math.hypot(points[left].x - points[right].x, points[left].y - points[right].y);
+      assert.ok(distance >= radius * 2, `${label}: bubbles ${left} and ${right} overlap (${distance.toFixed(1)})`);
+    }
+  }
+}
+
+// Yeast tRNA-Phe (public reference sequence) with its 14 known modifications as lab tokens.
+const yeastPheTokens = 'GCGGAUUUALCUCAGDDGGGAGAGCRCCAGABU#AAYAP?UGGAG7UC?UGUGTPCG"UCCACAGAAUUCGCACCA'.split("");
+assert.equal(yeastPheTokens.length, 76, "yeast tRNA-Phe has 76 positions");
+const yeastPheTemplate = getTemplateById("trna_classic", BUILTIN_TEMPLATES);
+const yeastPheProject = syncProjectToSequence(createDefaultProject(), yeastPheTokens, yeastPheTemplate);
+const yeastPheModified = yeastPheProject.nucleotides.filter((nucleotide) => nucleotide.modification);
+assert.equal(yeastPheModified.length, 14, "yeast tRNA-Phe maps 14 modified positions");
+
+const bubbleRadius = getBubbleRadius(yeastPheProject.nucleotides, yeastPheProject.stems);
+assert.ok(bubbleRadius > 10 && bubbleRadius <= BUBBLE_MAX_RADIUS, "template spacing allows a readable bubble radius");
+const bubblePositions = spreadOverlappingBubbles(yeastPheProject.nucleotides, yeastPheProject.stems, bubbleRadius);
+assert.equal(bubblePositions.size, yeastPheProject.nucleotides.length, "every nucleotide gets a bubble");
+assertNoBubbleOverlap(bubblePositions, bubbleRadius, "yeast tRNA-Phe");
+yeastPheProject.stems.forEach((stem) => {
+  [stem.from, stem.to].forEach((pos) => {
+    const stored = yeastPheProject.nucleotides.find((nucleotide) => nucleotide.pos === pos);
+    assert.deepEqual(bubblePositions.get(pos), { x: stored.x, y: stored.y }, "paired bases keep template coordinates");
+  });
+});
+
+assert.deepEqual(
+  yeastPheProject.nucleotides.filter(isAnticodonNucleotide).map((nucleotide) => nucleotide.positionLabel),
+  ["34", "35", "36"],
+  "anticodon bubbles are positions 34-36",
+);
+assert.equal(formatBubbleModification("psi"), "Ψ", "psi is printed as Ψ");
+assert.equal(formatBubbleModification("m1psi"), "m1Ψ", "psi inside a longer symbol is printed as Ψ");
+
+const bubbleLabelText = new Map(
+  yeastPheModified.map((nucleotide) => [
+    nucleotide.pos,
+    `${formatBubbleModification(nucleotide.modification)} ${nucleotide.positionLabel}`,
+  ]),
+);
+const bubbleLabels = buildBubbleLabelLayout(
+  yeastPheProject.nucleotides,
+  yeastPheProject.stems,
+  bubblePositions,
+  bubbleRadius,
+  bubbleLabelText,
+);
+assert.equal(bubbleLabels.size, 14, "every modified position gets an outside label");
+const bubbleLabelBoxes = [];
+bubbleLabels.forEach((placement, pos) => {
+  const width = bubbleLabelText.get(pos).length * 12 * 0.6;
+  const left = placement.anchor === "start" ? placement.x : placement.anchor === "end" ? placement.x - width : placement.x - width / 2;
+  const box = { left, right: left + width, top: placement.y - 7, bottom: placement.y + 7 };
+  bubblePositions.forEach((centre, otherPos) => {
+    const nearestX = Math.max(box.left, Math.min(centre.x, box.right));
+    const nearestY = Math.max(box.top, Math.min(centre.y, box.bottom));
+    assert.ok(
+      Math.hypot(centre.x - nearestX, centre.y - nearestY) >= bubbleRadius,
+      `label at ${pos} must not cover bubble ${otherPos}`,
+    );
+  });
+  bubbleLabelBoxes.forEach((other) => {
+    assert.ok(
+      !(box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top),
+      `label at ${pos} must not cover another label`,
+    );
+  });
+  bubbleLabelBoxes.push(box);
+});
+
+// Crowded unpaired bases are nudged apart; stored coordinates are not mutated.
+const crowded = [
+  { pos: 1, base: "G", x: 100, y: 100 },
+  { pos: 2, base: "A", x: 104, y: 100 },
+  { pos: 3, base: "U", x: 108, y: 100 },
+  { pos: 4, base: "C", x: 200, y: 100 },
+];
+const crowdedStems = [{ from: 1, to: 4 }];
+const crowdedPositions = spreadOverlappingBubbles(crowded, crowdedStems, 10);
+assertNoBubbleOverlap(crowdedPositions, 10, "crowded loop");
+assert.deepEqual(crowdedPositions.get(1), { x: 100, y: 100 }, "paired base stays fixed while free bases move");
+assert.equal(crowded[1].x, 104, "input coordinates are not mutated");
+assert.ok(BUBBLE_GAP > 0, "bubbles keep a visible gap");
+
+
+// --- Bubble theme on fixed rRNA templates: structure-driven arrangement -----
+const { buildRrna5_8sLayout } = require(path.join(outDir, "rrna5_8s.js"));
+const {
+  RADIAL_PAIR_WIDTH,
+  RADIAL_SPACING,
+  arrangeNucleotidesRadially,
+  buildRadialLayout,
+} = require(path.join(outDir, "radialLayout.js"));
+
+// Public reference sequences (human 5S, 120 nt; human 5.8S, 157 nt).
+const human5S = "GUCUACGGCCAUACCACCCUGAACGCGCCCGAUCUCGUCUGAUCUCGGAAGCUAAGCAGGGUCGGGCCUGGUUAGUACUUGGAUGGGAGACCGCCUGGGAAUACCGGGUGCUGUAGGCUU";
+const human5_8S = "CGACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCUAGCUGCGAGAAUUAAUGUGAAUUGCAGGACACAUUGAUCAUCGACACUUCGAACGCACUUGCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCGCUU";
+assert.equal(human5S.length, 120, "human 5S reference is 120 nt");
+
+[
+  ["5S", buildRrna5SLayout(human5S.split(""))],
+  ["5.8S", buildRrna5_8sLayout(human5_8S.split(""))],
+].forEach(([name, layout]) => {
+  const arranged = arrangeNucleotidesRadially(layout.nucleotides, layout.stems, { width: 1280, height: 980 });
+  const nodes = arranged.nucleotides;
+  assert.equal(nodes.length, layout.nucleotides.length, `${name}: every nucleotide is arranged`);
+
+  const radius = getBubbleRadius(nodes, layout.stems);
+  assert.ok(radius >= 12, `${name}: arrangement leaves room for readable bubbles (radius ${radius})`);
+  for (let left = 0; left < nodes.length; left += 1) {
+    assert.ok(Number.isFinite(nodes[left].x) && Number.isFinite(nodes[left].y), `${name}: finite coordinates`);
+    assert.ok(nodes[left].x >= 0 && nodes[left].x <= arranged.canvasWidth, `${name}: x inside canvas`);
+    assert.ok(nodes[left].y >= 0 && nodes[left].y <= arranged.canvasHeight, `${name}: y inside canvas`);
+    for (let right = left + 1; right < nodes.length; right += 1) {
+      const distance = Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y);
+      assert.ok(distance >= radius * 2, `${name}: bubbles ${nodes[left].pos} and ${nodes[right].pos} overlap`);
+    }
+  }
+
+  const byPos = new Map(nodes.map((node) => [node.pos, node]));
+  layout.stems.forEach((stem) => {
+    const a = byPos.get(stem.from);
+    const b = byPos.get(stem.to);
+    const width = Math.hypot(a.x - b.x, a.y - b.y);
+    assert.ok(Math.abs(width - RADIAL_PAIR_WIDTH) < 2, `${name}: pair ${stem.from}-${stem.to} keeps the pair width (${width.toFixed(1)})`);
+  });
+
+  const chain = [...nodes].sort((a, b) => (a.sequenceIndex ?? a.pos) - (b.sequenceIndex ?? b.pos));
+  chain.slice(0, -1).forEach((node, index) => {
+    const next = chain[index + 1];
+    const step = Math.hypot(node.x - next.x, node.y - next.y);
+    // A helix next to a loop's closing pair may be given up to 7 extra steps of room to avoid collisions.
+    assert.ok(step <= RADIAL_SPACING * 8 + 2, `${name}: backbone step ${node.pos}->${next.pos} stays bounded (${step.toFixed(1)})`);
+  });
+
+  // The stored template is untouched and the function is deterministic.
+  const again = arrangeNucleotidesRadially(layout.nucleotides, layout.stems, { width: 1280, height: 980 });
+  assert.deepEqual(
+    again.nucleotides.map((node) => [node.x, node.y]),
+    nodes.map((node) => [node.x, node.y]),
+    `${name}: arrangement is deterministic`,
+  );
+});
+
+assert.equal(buildRadialLayout([{ pos: 1, base: "A", x: 0, y: 0 }], []), null, "no pairs means no radial arrangement");
+
+// Theme decides which coordinates an rRNA template gets.
+const rrna5sBase = { ...createDefaultProject(), sequence: human5S.split("") };
+const rrna5sPublication = remapProjectToTemplate(
+  { ...rrna5sBase, settings: { ...rrna5sBase.settings, theme: "publication" } },
+  rrna5sTemplate,
+);
+const rrna5sBubble = remapProjectToTemplate(
+  { ...rrna5sBase, settings: { ...rrna5sBase.settings, theme: "bubble" } },
+  rrna5sTemplate,
+);
+assert.deepEqual(
+  rrna5sPublication.nucleotides.map((node) => [node.x, node.y]),
+  RRNA_5S_TEMPLATE_ROWS.map((row) => [row.x, row.y]),
+  "Publication theme keeps the fixed 5S template coordinates",
+);
+assert.notDeepEqual(
+  rrna5sBubble.nucleotides.map((node) => [node.x, node.y]),
+  rrna5sPublication.nucleotides.map((node) => [node.x, node.y]),
+  "Bubble theme re-arranges the 5S template",
+);
+assert.deepEqual(rrna5sBubble.stems, rrna5sPublication.stems, "Bubble theme never changes the template pairing");
+const rrna5sBubbleEdited = syncProjectToSequence(rrna5sBubble, human5S.split(""), rrna5sTemplate);
+assert.deepEqual(
+  rrna5sBubbleEdited.nucleotides.map((node) => [node.x, node.y]),
+  rrna5sBubble.nucleotides.map((node) => [node.x, node.y]),
+  "editing the sequence in the Bubble theme keeps the bubble arrangement",
+);
+
+
+// Switching rRNA preset and then changing the sequence must not leave stale tick labels.
+const rrna58Template = getTemplateById("rrna_5_8s_secondary_structure", BUILTIN_TEMPLATES);
+const from5sTo58 = remapProjectToTemplate(rrna5sBubble, rrna58Template);
+const resized58 = syncProjectToSequence(from5sTo58, human5_8S.split(""), rrna58Template);
+const fresh58 = buildRrna5_8sLayout(human5_8S.split(""));
+assert.deepEqual(
+  resized58.nucleotides.map((node) => node.positionLabel ?? null),
+  fresh58.nucleotides.map((node) => node.positionLabel ?? null),
+  "5.8S tick labels come from the template after a length change",
+);
+
+
+// --- 5.8S: input is aligned to the reference window by sequence ---------------
+const { RRNA_5_8S_REFERENCE_SEQUENCE } = require(path.join(outDir, "rrna5_8s.js"));
+assert.equal(RRNA_5_8S_REFERENCE_SEQUENCE.length, 153, "5.8S reference window is 153 nt");
+assert.equal(human5_8S.indexOf(RRNA_5_8S_REFERENCE_SEQUENCE), 1, "mature human 5.8S contains the reference window after one 5 prime base");
+
+function pairCounts(layout) {
+  return layout.stems.reduce((counts, stem) => {
+    counts[stem.pairStatus] = (counts[stem.pairStatus] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+const window58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.split(""));
+assert.deepEqual(pairCounts(window58), { normal: 19, wobble: 1 }, "every 5.8S template pair is Watson-Crick or G-U on the reference window");
+assert.deepEqual(window58.warnings, [], "the 153-nt reference window maps without warnings");
+// The 5.8S pairing is the published human structure (RNAcentral R2DT, RiboVision template).
+const { RRNA_5_8S_REFERENCE_STRUCTURE } = require(path.join(outDir, "rrna5_8s.js"));
+assert.equal(RRNA_5_8S_REFERENCE_STRUCTURE.length, 153, "5.8S reference structure covers 153 positions");
+assert.equal(window58.stems.length, 20, "5.8S reference structure has 20 base pairs");
+assert.deepEqual(
+  window58.stems.map((stem) => [stem.from, stem.to]),
+  [
+    [41, 100], [42, 99], [43, 98],
+    [44, 57], [45, 56], [46, 55],
+    [63, 94],
+    [65, 91], [66, 90], [67, 89],
+    [105, 112], [106, 111],
+    [113, 135], [114, 134], [115, 133], [116, 132], [117, 131], [118, 130], [119, 129], [120, 128],
+  ],
+  "5.8S pairs match the published human structure",
+);
+const paired58 = new Set(window58.stems.flatMap((stem) => [stem.from, stem.to]));
+assert.ok(
+  [...Array(40).keys()].every((index) => !paired58.has(index + 1)),
+  "5.8S positions 1-40 are unpaired in the standalone figure (they pair with 28S in the ribosome)",
+);
+assert.ok(
+  [...Array(18).keys()].every((index) => !paired58.has(136 + index)),
+  "5.8S positions 136-153 are unpaired in the standalone figure",
+);
+
+// Mature 157-nt human 5.8S: one extra 5 prime base and three extra 3 prime bases (CUU).
+const mature58 = buildRrna5_8sLayout(human5_8S.split(""));
+assert.deepEqual(pairCounts(mature58), { normal: 19, wobble: 1 }, "mature 157-nt human 5.8S keeps the template in register");
+assert.deepEqual(
+  mature58.stems.map((stem) => [stem.from - 1, stem.to - 1]),
+  window58.stems.map((stem) => [stem.from, stem.to]),
+  "mature 5.8S pairs are the reference pairs shifted by the single extra 5 prime base",
+);
+assert.ok(mature58.warnings.some((warning) => warning.includes("1 extra 5′ and 3 extra 3′")), "3 prime extension is reported");
+const mature58Paired = new Set(mature58.stems.flatMap((stem) => [stem.from, stem.to]));
+[1, 155, 156, 157].forEach((pos) => assert.ok(!mature58Paired.has(pos), `extension position ${pos} is unpaired`));
+assert.equal(mature58.nucleotides[1].positionLabel, "1", "canonical numbering starts at the second base of the mature form");
+assert.ok(
+  mature58.nucleotides.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)),
+  "3 prime extension positions get coordinates",
+);
+
+// A 5 prime-extended form (long 5.8S) still aligns by sequence.
+const long58 = buildRrna5_8sLayout(("UACGGAU" + human5_8S).split(""));
+assert.deepEqual(pairCounts(long58), { normal: 19, wobble: 1 }, "5 prime-extended 5.8S keeps the template in register");
+
+// A 5 prime-truncated form aligns to the 3 prime part of the window.
+const truncated58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.slice(12).split(""));
+assert.equal(truncated58.nucleotides[0].positionLabel ?? null, null, "truncated form starts inside the window");
+assert.equal(truncated58.nucleotides[7].positionLabel, "20", "truncated 5.8S keeps canonical numbering");
+assert.deepEqual(pairCounts(truncated58), { normal: 19, wobble: 1 }, "truncated 5.8S keeps all template pairs");
+
+// Unrelated input falls back to the 3 prime alignment rule.
+const unrelated58 = buildRrna5_8sLayout("A".repeat(160).split(""));
+assert.equal(unrelated58.nucleotides[7].positionLabel, "1", "unrelated 160-nt input is 3 prime aligned (7 extra 5 prime positions)");
+assert.equal(unrelated58.stems.length, 20, "fallback alignment still draws every template pair");
+
+assert.ok(
+  mature58.recommendedCanvasWidth >= Math.max(...mature58.nucleotides.map((node) => node.x)) + 40,
+  "3 prime extension stays inside the recommended canvas width",
+);
+assert.ok(window58.recommendedCanvasWidth <= mature58.recommendedCanvasWidth, "canvas only widens for the 3 prime extension");
+
+
+// 5.8S text-theme coordinates are generated from the pairing: nothing overlaps or leaves the canvas.
+[
+  ["153-nt window", window58],
+  ["mature 157 nt", mature58],
+  ["5 prime-extended", long58],
+  ["5 prime-truncated", truncated58],
+].forEach(([name, layout]) => {
+  const nodes = layout.nucleotides;
+  for (let left = 0; left < nodes.length; left += 1) {
+    assert.ok(nodes[left].x >= 40 && nodes[left].x <= layout.recommendedCanvasWidth - 40, `5.8S ${name}: x inside canvas`);
+    assert.ok(nodes[left].y >= 40 && nodes[left].y <= layout.recommendedCanvasHeight - 40, `5.8S ${name}: y inside canvas`);
+    for (let right = left + 1; right < nodes.length; right += 1) {
+      const distance = Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y);
+      assert.ok(distance >= 20, `5.8S ${name}: positions ${nodes[left].pos} and ${nodes[right].pos} overlap (${distance.toFixed(1)})`);
+    }
+  }
+});
+// The 5 prime end starts left of the opening and the chain first moves down the left side.
+assert.ok(mature58.nucleotides[0].x < mature58.nucleotides[156].x, "5.8S 5 prime end sits left of the 3 prime end");
+assert.ok(mature58.nucleotides[20].y > mature58.nucleotides[0].y, "5.8S leader descends from the 5 prime end");
+assert.ok(mature58.nucleotides[20].x < mature58.nucleotides[0].x, "5.8S leader runs down the left side");
+const short58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.slice(0, 40).split(""));
+assert.equal(short58.stems.length, 0, "a fragment without any template pair has no stems");
+assert.ok(short58.nucleotides.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)), "an unpaired fragment still gets coordinates");
 
 console.log("structure layout tests passed");

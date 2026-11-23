@@ -1,21 +1,30 @@
 /**
- * 5.8S rRNA secondary-structure layout — fixed-coordinate approach.
+ * 5.8S rRNA secondary-structure layout.
  *
- * Every canonical nucleotide position has a hard-coded (x, y) derived from the
- * reference publication figure.  Variable-length sequences are handled by
- * extending the 5′ tail rather than recomputing the whole topology:
+ * The template is a pairing map over 153 canonical positions. Coordinates are
+ * generated from that pairing (stacked pairs as ladders, loops as circles, the
+ * long unpaired exterior on an open ring), so every theme gets a layout without
+ * overlapping positions. Nothing is predicted: the pairs are fixed below.
  *
- *   short 5.8S  (≤153 nt)  → align to the 3′ end of the table; truncated 5′ tail
+ * Input is first aligned to the 153-nt reference sequence by identity, so the
+ * mature 157-nt human 5.8S maps with 1 extra 5′ and 3 extra 3′ positions.
+ * When the input does not resemble the reference, the 3′ ends are aligned:
+ *   short 5.8S  (≤153 nt)  → 5′-truncated; canonical numbering is kept
  *   canonical   (153 nt)   → direct 1-to-1 mapping
- *   long  5.8S  (>153 nt)  → prepend extra 5′ positions above the canonical leader
+ *   long  5.8S  (>153 nt)  → extra 5′ positions, drawn unpaired
  *
- * Canonical pairing map (1-based positions):
- *   Stem-A (8 bp):  52↔115, 53↔114, 54↔113, 55↔112, 56↔111, 57↔110, 58↔109, 59↔108
- *   Stem-B (9 bp):  61↔88,  62↔87,  63↔86,  64↔85,  65↔84,  66↔83,  67↔82,  68↔81,  69↔80
- *   Stem-D (6 bp):  116↔132, 117↔131, 118↔130, 119↔129, 120↔128, 121↔127
+ * Canonical pairing (1-based positions), from the published human structure:
+ *   41-43 ↔ 98-100    closes the central multiloop
+ *   44-46 ↔ 55-57     hairpin
+ *   63 ↔ 94, 65-67 ↔ 89-91   hairpin with a 21-nt loop
+ *   105-106 ↔ 111-112  hairpin
+ *   113-120 ↔ 128-135  GC-rich 3′ hairpin
+ * Positions 1-40 and 136-153 are unpaired here; in the ribosome these ends
+ * pair with 28S rRNA, which a standalone 5.8S figure cannot show.
  */
 
 import { getRenderableBase } from "./annotations";
+import { buildRadialLayout } from "./radialLayout";
 import type { RnaNucleotide, RnaPairStatus, RnaStem } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -24,233 +33,71 @@ import type { RnaNucleotide, RnaPairStatus, RnaStem } from "./types";
 
 export const RRNA_5_8S_CANONICAL_LENGTH = 153;
 
+/**
+ * Reference for the 153 canonical positions.
+ *
+ * Sequence: human 5.8S rRNA, GenBank U13369.1 positions 6624-6776 (RNAcentral
+ * URS00006CE1FB; also the human entry in the Rfam RF00002 seed alignment). The
+ * mature 157-nt human 5.8S (RNAcentral URS0000005270) has one more base at the
+ * 5′ end and three more (CUU) at the 3′ end.
+ *
+ * Structure: the secondary structure RNAcentral publishes for that sequence,
+ * drawn by R2DT from the RiboVision template, which is derived from the
+ * three-dimensional structure of the ribosome. 20 base pairs, 19 Watson-Crick
+ * and 1 G-U on the human sequence. 19 of the 20 are also in the Rfam RF00002
+ * comparative consensus (European LSU rRNA database, PMID 11125083).
+ *
+ * The pairing is taken from that reference, never predicted here. Input
+ * sequences are aligned to the reference by identity so that extra bases at
+ * either end do not shift the template.
+ */
+export const RRNA_5_8S_REFERENCE_SEQUENCE =
+  "GACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCUAGCUGCGAGAAUUAAUGUGAAUUGCAGGACACAUUGAUCAUCGACACUUCGAACGCACUUGCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCG";
+
+export const RRNA_5_8S_REFERENCE_STRUCTURE =
+  "........................................((((((........))).....(.(((.....................)))..)...)))....((....))((((((((.......))))))))..................";
+
+/** Minimum identity over the overlap for sequence-based alignment to be trusted. */
+const ALIGNMENT_MIN_IDENTITY = 0.8;
+
 /** Minimum length before a "truncation" warning fires (5′ tail 11-12 nt short). */
 const TRUNCATION_THRESHOLD = 141;
 
-// Canonical vertical spacing for the 5′ leader and for extra 5′ positions added
-// when the input sequence is longer than the canonical 153 nt.
-const LEADER_X = 85;
-const LEADER_Y_FIRST = 78;   // y of canonical position 1
-const LEADER_SPACING = 24;   // px between consecutive leader nucleotides
-
-// ---------------------------------------------------------------------------
-// Fixed coordinate table — 153 positions, 1-indexed.
-// Coordinates are (x, y) in SVG pixels on a 1280 × 900 canvas.
-// Derived from the reference 5.8S rRNA secondary-structure figure.
-// ---------------------------------------------------------------------------
-
-/**
- * Canonical (x, y) for each position 1..153.
- * Index 0 is unused; canonical position p is at COORDS[p].
- */
-const COORDS: ReadonlyArray<readonly [number, number]> = [
-  /* 0 – placeholder */ [0, 0],
-
-  // ── 5′ leader (1-21): straight vertical line ──────────────────────────
-  /* 1  */ [85, 78],
-  /* 2  */ [85, 102],
-  /* 3  */ [85, 126],
-  /* 4  */ [85, 150],
-  /* 5  */ [85, 174],
-  /* 6  */ [85, 198],
-  /* 7  */ [85, 222],
-  /* 8  */ [85, 246],
-  /* 9  */ [85, 270],
-  /* 10 */ [85, 294],
-  /* 11 */ [85, 318],
-  /* 12 */ [85, 342],
-  /* 13 */ [85, 366],
-  /* 14 */ [85, 390],
-  /* 15 */ [85, 414],
-  /* 16 */ [85, 438],
-  /* 17 */ [85, 462],
-  /* 18 */ [85, 486],
-  /* 19 */ [85, 510],
-  /* 20 */ [85, 534],
-  /* 21 */ [85, 558],
-
-  // ── SS2 arc (22-40): large sweep at bottom-left ───────────────────────
-  // Ellipse: center=(291,607), rx=199, ry=123, sweeping 200° → -20°
-  /* 22 */ [104, 565],
-  /* 23 */ [94,  590],
-  /* 24 */ [93,  617],
-  /* 25 */ [101, 642],
-  /* 26 */ [117, 667],
-  /* 27 */ [141, 688],
-  /* 28 */ [173, 706],
-  /* 29 */ [209, 719],
-  /* 30 */ [249, 727],
-  /* 31 */ [291, 730],
-  /* 32 */ [333, 727],
-  /* 33 */ [373, 719],
-  /* 34 */ [409, 706],
-  /* 35 */ [441, 688],
-  /* 36 */ [465, 667],
-  /* 37 */ [481, 642],
-  /* 38 */ [489, 617],
-  /* 39 */ [488, 590],
-  /* 40 */ [478, 565],
-
-  // ── SS3 linker (41-51): diagonal from arc end to Stem-A outer ─────────
-  /* 41 */ [484, 554],
-  /* 42 */ [490, 543],
-  /* 43 */ [496, 533],
-  /* 44 */ [502, 522],
-  /* 45 */ [509, 511],
-  /* 46 */ [515, 501],
-  /* 47 */ [521, 490],
-  /* 48 */ [527, 479],
-  /* 49 */ [534, 469],
-  /* 50 */ [540, 458],
-  /* 51 */ [546, 447],
-
-  // ── Stem-A 5′ strand (52-59): going up-right, outer → inner ──────────
-  // Each pair (52↔115 … 59↔108) shares the same y; dx=55 between strands.
-  /* 52 */ [546, 447],
-  /* 53 */ [551, 425],
-  /* 54 */ [556, 403],
-  /* 55 */ [561, 381],
-  /* 56 */ [566, 359],
-  /* 57 */ [571, 337],
-  /* 58 */ [576, 315],
-  /* 59 */ [581, 293],
-
-  // ── j5p (60): junction connector ──────────────────────────────────────
-  /* 60 */ [531, 284],
-
-  // ── Stem-B 5′ strand (61-69): vertical, going up ─────────────────────
-  /* 61 */ [490, 275],
-  /* 62 */ [490, 257],
-  /* 63 */ [490, 238],
-  /* 64 */ [490, 220],
-  /* 65 */ [490, 201],
-  /* 66 */ [490, 183],
-  /* 67 */ [490, 164],
-  /* 68 */ [490, 146],
-  /* 69 */ [490, 128],
-
-  // ── Loop-B (70-79): arc at top of Stem-B ─────────────────────────────
-  // Ellipse: center=(522,128), rx=32, ry=72, sweeping 180° → 360°
-  /* 70 */ [490, 128],
-  /* 71 */ [492, 104],
-  /* 72 */ [497, 83],
-  /* 73 */ [506, 67],
-  /* 74 */ [516, 59],
-  /* 75 */ [528, 59],
-  /* 76 */ [538, 67],
-  /* 77 */ [547, 83],
-  /* 78 */ [553, 104],
-  /* 79 */ [555, 128],
-
-  // ── Stem-B 3′ strand (80-88): vertical, going down ───────────────────
-  /* 80 */ [555, 128],
-  /* 81 */ [555, 146],
-  /* 82 */ [555, 165],
-  /* 83 */ [555, 183],
-  /* 84 */ [555, 201],
-  /* 85 */ [555, 220],
-  /* 86 */ [555, 238],
-  /* 87 */ [555, 257],
-  /* 88 */ [555, 275],
-
-  // ── SS-100 / j1_3p (89-107): large D-shaped arc, right side ──────────
-  // Ellipse: center=(595,280), rx=40, ry=380, sweeping 180° → 0°
-  /* 89  */ [555, 280],
-  /* 90  */ [556, 346],
-  /* 91  */ [557, 410],
-  /* 92  */ [560, 470],
-  /* 93  */ [564, 524],
-  /* 94  */ [569, 571],
-  /* 95  */ [575, 609],
-  /* 96  */ [581, 637],
-  /* 97  */ [588, 654],
-  /* 98  */ [595, 660],
-  /* 99  */ [602, 654],
-  /* 100 */ [609, 637],
-  /* 101 */ [615, 609],
-  /* 102 */ [621, 571],
-  /* 103 */ [626, 524],
-  /* 104 */ [630, 470],
-  /* 105 */ [633, 410],
-  /* 106 */ [634, 346],
-  /* 107 */ [635, 280],
-
-  // ── Stem-A 3′ strand (108-115): going down-left, inner → outer ───────
-  // Pairs with 5′ strand at identical y; dx=55 separating the two strands.
-  /* 108 */ [636, 293],
-  /* 109 */ [631, 315],
-  /* 110 */ [626, 337],
-  /* 111 */ [621, 359],
-  /* 112 */ [616, 381],
-  /* 113 */ [611, 403],
-  /* 114 */ [606, 425],
-  /* 115 */ [601, 447],
-
-  // ── Stem-D 5′ strand (116-121): diagonal, inner → outer ──────────────
-  // Direction (+40,+28) per step; 3′ strand offset (+29,−41) perpendicular.
-  /* 116 */ [640, 473],
-  /* 117 */ [680, 501],
-  /* 118 */ [720, 529],
-  /* 119 */ [760, 557],
-  /* 120 */ [800, 585],
-  /* 121 */ [840, 613],
-
-  // ── Loop-D (122-126): small arc at outer end of Stem-D ───────────────
-  /* 122 */ [849, 619],
-  /* 123 */ [862, 627],
-  /* 124 */ [875, 625],
-  /* 125 */ [882, 613],
-  /* 126 */ [879, 597],
-
-  // ── Stem-D 3′ strand (127-132): diagonal, outer → inner ──────────────
-  /* 127 */ [869, 572],
-  /* 128 */ [829, 544],
-  /* 129 */ [789, 516],
-  /* 130 */ [749, 488],
-  /* 131 */ [709, 460],
-  /* 132 */ [669, 432],
-
-  // ── SS4 (133-149): trailing single-stranded region ────────────────────
-  /* 133 */ [698, 450],
-  /* 134 */ [727, 469],
-  /* 135 */ [756, 487],
-  /* 136 */ [785, 505],
-  /* 137 */ [814, 523],
-  /* 138 */ [843, 541],
-  /* 139 */ [872, 560],
-  /* 140 */ [901, 578],
-  /* 141 */ [930, 596],
-  /* 142 */ [959, 614],
-  /* 143 */ [988, 632],
-  /* 144 */ [1017, 650],
-  /* 145 */ [1046, 668],
-  /* 146 */ [1075, 687],
-  /* 147 */ [1104, 705],
-  /* 148 */ [1133, 723],
-  /* 149 */ [1162, 741],
-
-  // ── SS5 (150-153): 3′ tail ────────────────────────────────────────────
-  /* 150 */ [1191, 759],
-  /* 151 */ [1210, 768],
-  /* 152 */ [1229, 777],
-  /* 153 */ [1248, 786],
-];
+// Spacing for the text themes; the Bubble theme re-arranges from the same pairs.
+const TEMPLATE_SPACING = 25;
+const TEMPLATE_PAIR_WIDTH = 56;
+const TEMPLATE_CANVAS = { width: 1280, height: 980 };
 
 // ---------------------------------------------------------------------------
 // Canonical pairing map (1-based positions, 153-nt reference)
 // ---------------------------------------------------------------------------
 
-const CANONICAL_PAIRS: readonly [number, number][] = [
-  // Stem-A (8 bp)
-  [52, 115], [53, 114], [54, 113], [55, 112],
-  [56, 111], [57, 110], [58, 109], [59, 108],
-  // Stem-B (9 bp)
-  [61, 88], [62, 87], [63, 86], [64, 85],
-  [65, 84], [66, 83], [67, 82], [68, 81], [69, 80],
-  // Stem-D (6 bp)
-  [116, 132], [117, 131], [118, 130],
-  [119, 129], [120, 128], [121, 127],
-];
+function parseReferencePairs(structure: string): Array<[number, number]> {
+  const pairs: Array<[number, number]> = [];
+  const stack: number[] = [];
+
+  structure.split("").forEach((symbol, index) => {
+    if (symbol === "(") {
+      stack.push(index + 1);
+    } else if (symbol === ")") {
+      const open = stack.pop();
+      if (open === undefined) {
+        throw new Error("5.8S rRNA reference structure is unbalanced.");
+      }
+      pairs.push([open, index + 1]);
+    }
+  });
+
+  if (stack.length > 0 || structure.length !== RRNA_5_8S_CANONICAL_LENGTH) {
+    throw new Error("5.8S rRNA reference structure must be balanced and 153 positions long.");
+  }
+
+  return pairs.sort((left, right) => left[0] - right[0]);
+}
+
+const CANONICAL_PAIRS: ReadonlyArray<readonly [number, number]> = parseReferencePairs(
+  RRNA_5_8S_REFERENCE_STRUCTURE,
+);
 
 // ---------------------------------------------------------------------------
 // Pair-status helper
@@ -275,34 +122,77 @@ function shouldLabel(canonicalPos: number): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Bottom y of the canonical 153-nt layout (last SS5 position). */
-const CANONICAL_BOTTOM_Y = COORDS[RRNA_5_8S_CANONICAL_LENGTH][1]; // 786
-/** Top margin above the first nucleotide. */
-const CANVAS_TOP_MARGIN = 40;
-/** Bottom margin below the last nucleotide. */
-const CANVAS_BOTTOM_MARGIN = 80;
+/**
+ * Canonical position aligned to the first input base.
+ *
+ * Tries every offset with a large enough overlap and keeps the one with the
+ * most identical bases, provided identity over the overlap is high. Otherwise
+ * the 3′ ends are aligned (the rule this template used before).
+ */
+function findCanonicalStart(sequence: string[]): number {
+  const seqLen = sequence.length;
+  const threePrimeAligned = 1 - (seqLen - RRNA_5_8S_CANONICAL_LENGTH);
+  const bases = sequence.map((token) => (getRenderableBase(token) || token).toUpperCase());
+  const minimumOverlap = Math.ceil(Math.min(seqLen, RRNA_5_8S_CANONICAL_LENGTH) * 0.8);
+  const score = (start: number) => {
+    let overlap = 0;
+    let matches = 0;
+    for (let idx = 0; idx < seqLen; idx += 1) {
+      const canPos = start + idx;
+      if (canPos < 1 || canPos > RRNA_5_8S_CANONICAL_LENGTH) {
+        continue;
+      }
+      overlap += 1;
+      if (bases[idx] === RRNA_5_8S_REFERENCE_SEQUENCE[canPos - 1]) {
+        matches += 1;
+      }
+    }
+    return { overlap, matches };
+  };
+
+  let best = threePrimeAligned;
+  let bestMatches = -1;
+  const fallbackScore = score(threePrimeAligned);
+  if (
+    fallbackScore.overlap >= minimumOverlap &&
+    fallbackScore.matches / fallbackScore.overlap >= ALIGNMENT_MIN_IDENTITY
+  ) {
+    bestMatches = fallbackScore.matches;
+  }
+
+  for (let start = 2 - seqLen; start <= RRNA_5_8S_CANONICAL_LENGTH; start += 1) {
+    const { overlap, matches } = score(start);
+    if (overlap < minimumOverlap || matches / overlap < ALIGNMENT_MIN_IDENTITY) {
+      continue;
+    }
+    // Strictly better only, so the 3′-aligned offset wins ties.
+    if (matches > bestMatches) {
+      best = start;
+      bestMatches = matches;
+    }
+  }
+
+  return best;
+}
 
 /**
  * Build the nucleotide + stem layout for a 5.8S rRNA sequence.
  *
- * Alignment rules (all relative to canonical 153-nt coordinates):
- *
- *   seqLen == 153  → direct 1-to-1 mapping
- *   seqLen > 153   → extra (seqLen−153) nucleotides prepend the 5′ leader;
- *                    the whole structure shifts DOWN so the first extra position
- *                    lands at y = LEADER_Y_FIRST and the topology never changes
- *   seqLen < 153   → truncated 5′ tail; sequence starts at canonical pos
- *                    (154 − seqLen) so the structural core is always placed
+ * Coordinates come from the pairing map, not from a hand-entered table, so the
+ * same routine serves the canonical form, 5′-extended and 5′-truncated forms and
+ * the mature form with a 3′ extension. Extra positions outside the 153 canonical
+ * ones are drawn unpaired.
  *
  * Modifications arrive via the annotation layer only.
  *
- * Returns `recommendedCanvasHeight` so callers can resize the SVG canvas to fit.
+ * Returns the canvas size needed to show the whole figure.
  */
 export function buildRrna5_8sLayout(sequence: string[]): {
   nucleotides: RnaNucleotide[];
   stems: RnaStem[];
   warnings: string[];
   recommendedCanvasHeight: number;
+  recommendedCanvasWidth: number;
 } {
   const seqLen = sequence.length;
   const warnings: string[] = [];
@@ -312,7 +202,7 @@ export function buildRrna5_8sLayout(sequence: string[]): {
     warnings.push(
       `Sequence is ${seqLen} nt — ${seqLen - RRNA_5_8S_CANONICAL_LENGTH} nt longer than the ` +
       `${RRNA_5_8S_CANONICAL_LENGTH}-nt canonical 5.8S template. ` +
-      `Extra 5′ positions have been added above the leader.`,
+      `Extra positions are drawn unpaired.`,
     );
   }
 
@@ -325,83 +215,67 @@ export function buildRrna5_8sLayout(sequence: string[]): {
   }
 
   // ── Canonical offset ──────────────────────────────────────────────────────
-  // extra > 0  → long form (prepend extra positions)
-  // extra < 0  → truncation (skip first |extra| canonical positions)
-  const extra = seqLen - RRNA_5_8S_CANONICAL_LENGTH;
-  const canonicalStart = 1 - extra; // canonical position that aligns to seq idx 0
+  // canonicalStart is the canonical position that aligns to sequence index 0.
+  // Preferred: slide the input along the reference sequence and take the offset
+  // with the most identical bases. Fallback (unrelated or heavily edited input):
+  // align the 3′ ends, so a longer input gains extra 5′ positions and a shorter
+  // one is treated as 5′-truncated.
+  const canonicalStart = findCanonicalStart(sequence);
+  const extraFivePrime = Math.max(0, 1 - canonicalStart);
+  const extraThreePrime = Math.max(0, canonicalStart + seqLen - 1 - RRNA_5_8S_CANONICAL_LENGTH);
 
-  // ── y-shift for long-form sequences ──────────────────────────────────────
-  // When extra > 0 we shift every coordinate DOWN so the first extra position
-  // lands at y = LEADER_Y_FIRST (same as canonical pos 1) and the entire
-  // structural core moves with it — topology never changes.
-  const yShift = extra > 0 ? extra * LEADER_SPACING : 0;
+  if (extraThreePrime > 0) {
+    warnings.push(
+      `Aligned to the ${RRNA_5_8S_CANONICAL_LENGTH}-nt reference by sequence: ` +
+      `${extraFivePrime} extra 5′ and ${extraThreePrime} extra 3′ position${extraThreePrime === 1 ? "" : "s"} are drawn unpaired.`,
+    );
+  }
 
-  // ── Recommended canvas height ─────────────────────────────────────────────
-  const bottomY = CANONICAL_BOTTOM_Y + yShift;
-  const recommendedCanvasHeight = bottomY + CANVAS_BOTTOM_MARGIN;
-
-  // ── Build nucleotides ────────────────────────────────────────────────────
-  const nucleotides: RnaNucleotide[] = sequence.map((token, idx) => {
+  // ── Nucleotides (coordinates filled in below) ────────────────────────────
+  const drafts = sequence.map((token, idx) => {
     const canPos = canonicalStart + idx; // 1-based canonical position
-    const base = getRenderableBase(token) || token;
-
-    let x: number;
-    let y: number;
-    let posLabel: string | undefined;
-
-    if (canPos >= 1 && canPos <= RRNA_5_8S_CANONICAL_LENGTH) {
-      // Within the canonical table — apply yShift for long forms
-      [x, y] = COORDS[canPos];
-      y += yShift;
-      posLabel = shouldLabel(canPos) ? String(canPos) : undefined;
-    } else if (canPos < 1) {
-      // Extra 5′ nucleotides prepended above canonical pos 1.
-      // idx=0 lands at LEADER_Y_FIRST; each step below adds LEADER_SPACING.
-      // (canonical pos 1 will be at LEADER_Y_FIRST + extra*LEADER_SPACING = COORDS[1] + yShift)
-      x = LEADER_X;
-      y = LEADER_Y_FIRST + idx * LEADER_SPACING;
-      // Label every 10th sequence position
-      posLabel = (idx + 1) % 10 === 0 ? String(idx + 1) : undefined;
-    } else {
-      // canPos > canonical length — safety fallback (should not be reached)
-      x = COORDS[RRNA_5_8S_CANONICAL_LENGTH][0] + (canPos - RRNA_5_8S_CANONICAL_LENGTH) * 20;
-      y = COORDS[RRNA_5_8S_CANONICAL_LENGTH][1] + yShift;
-      posLabel = undefined;
-    }
+    const insideTemplate = canPos >= 1 && canPos <= RRNA_5_8S_CANONICAL_LENGTH;
+    // Canonical ticks inside the template; every 10th sequence position on a 5′ extension.
+    const posLabel = insideTemplate
+      ? shouldLabel(canPos)
+        ? String(canPos)
+        : undefined
+      : canPos < 1 && (idx + 1) % 10 === 0
+        ? String(idx + 1)
+        : undefined;
 
     return {
       pos: idx + 1,
-      base,
-      x,
-      y,
+      base: getRenderableBase(token) || token,
+      x: 0,
+      y: 0,
       sequenceIndex: idx + 1,
       originalToken: token,
       positionLabel: posLabel,
       status: "present" as const,
       visible: true,
+      canPos,
     };
   });
 
-  // ── Build stems ───────────────────────────────────────────────────────────
+  // ── Stems ─────────────────────────────────────────────────────────────────
   // Remap canonical pair positions to sequence positions via the same offset.
   const seqPosByCanonical = new Map<number, number>();
-  for (let idx = 0; idx < seqLen; idx++) {
-    const canPos = canonicalStart + idx;
-    if (canPos >= 1 && canPos <= RRNA_5_8S_CANONICAL_LENGTH) {
-      seqPosByCanonical.set(canPos, idx + 1); // seq pos = idx+1
+  drafts.forEach((draft) => {
+    if (draft.canPos >= 1 && draft.canPos <= RRNA_5_8S_CANONICAL_LENGTH) {
+      seqPosByCanonical.set(draft.canPos, draft.pos);
     }
-  }
+  });
 
-  const nucleotideBySeqPos = new Map(nucleotides.map((n) => [n.pos, n]));
-
+  const draftBySeqPos = new Map(drafts.map((draft) => [draft.pos, draft]));
   const stems: RnaStem[] = [];
   for (const [canA, canB] of CANONICAL_PAIRS) {
     const seqA = seqPosByCanonical.get(canA);
     const seqB = seqPosByCanonical.get(canB);
     if (seqA === undefined || seqB === undefined) continue;
 
-    const nA = nucleotideBySeqPos.get(seqA);
-    const nB = nucleotideBySeqPos.get(seqB);
+    const nA = draftBySeqPos.get(seqA);
+    const nB = draftBySeqPos.get(seqB);
     if (!nA || !nB) continue;
 
     stems.push({
@@ -411,5 +285,25 @@ export function buildRrna5_8sLayout(sequence: string[]): {
     });
   }
 
-  return { nucleotides, stems, warnings, recommendedCanvasHeight };
+  // ── Coordinates from the pairing ─────────────────────────────────────────
+  const layout = buildRadialLayout(drafts, stems, TEMPLATE_SPACING, TEMPLATE_PAIR_WIDTH);
+  const recommendedCanvasWidth = Math.max(TEMPLATE_CANVAS.width, layout?.width ?? 0);
+  const recommendedCanvasHeight = Math.max(TEMPLATE_CANVAS.height, layout?.height ?? 0);
+  const offsetX = layout ? (recommendedCanvasWidth - layout.width) / 2 : 0;
+  const offsetY = layout ? (recommendedCanvasHeight - layout.height) / 2 : 0;
+
+  const nucleotides: RnaNucleotide[] = drafts.map((draft, idx) => {
+    const point = layout?.positions.get(draft.pos);
+    const { canPos: _canPos, ...nucleotide } = draft;
+    void _canPos;
+
+    return {
+      ...nucleotide,
+      // Without any pair in range (very short fragments) fall back to a straight line.
+      x: point ? Math.round(point.x + offsetX) : 80 + idx * TEMPLATE_SPACING,
+      y: point ? Math.round(point.y + offsetY) : TEMPLATE_CANVAS.height / 2,
+    };
+  });
+
+  return { nucleotides, stems, warnings, recommendedCanvasHeight, recommendedCanvasWidth };
 }

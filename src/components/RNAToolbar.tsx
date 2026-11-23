@@ -209,6 +209,7 @@ export function RNAToolbar({
           >
             <option value="light">Light</option>
             <option value="publication">Publication</option>
+            <option value="bubble">Bubble</option>
           </select>
         </label>
 
