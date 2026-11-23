@@ -228,11 +228,13 @@ export function buildRadialLayout(
     const rawAngles = chords.map((chord) => 2 * Math.asin(Math.min(1, chord / (2 * radius))));
     const total = rawAngles.reduce((sum, angle) => sum + angle, 0) || 1;
     const scale = (TWO_PI - gapAngle) / total;
-    let angle = -Math.PI / 2 + gapAngle / 2;
+    // Start left of the opening at the top and run counter-clockwise, so the 5′
+    // end descends on the left as in a cloverleaf and the 3′ end returns on the right.
+    let angle = -Math.PI / 2 - gapAngle / 2;
     let chordIndex = 0;
     const here = () => ({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
     const advance = () => {
-      angle += rawAngles[chordIndex] * scale;
+      angle -= rawAngles[chordIndex] * scale;
       chordIndex += 1;
     };
 

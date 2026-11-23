@@ -63,6 +63,10 @@ The 5.8S preset has 153 canonical positions. They correspond to human 5.8S rRNA,
 
 Input is aligned to that 153-nt reference by sequence identity, so extra bases at either end do not shift the template. The mature 157-nt human 5.8S maps with one extra 5′ base and three extra 3′ bases (CUU), drawn unpaired. A 5′-extended or 5′-truncated form keeps canonical numbering. When the input does not resemble the reference, the 3′ ends are aligned instead.
 
+Coordinates are generated from the pairing map in every theme: stacked pairs are ladders, loops are circles, and the long unpaired leader and tail run around an open ring with the 5′ end descending on the left. There is no hand-entered coordinate table, so positions do not overlap and the figure stays inside the canvas for extended or truncated forms.
+
+![Human 5.8S rRNA in the Publication theme](docs/rrna-5_8s-publication.svg)
+
 The template's three helices (52-59 with 108-115, 61-69 with 80-88, 116-121 with 127-132) are one structure model. The Rfam RF00002 consensus (published structure, PMID 11125083) is a different model: it shares the 3′ hairpin and extends it to 113-121 with 127-135, but pairs 40-47, 65-67, 72-73 and 105-107 differently. The tool keeps the template model; it does not predict or choose between them.
 
 ## Modification Input
@@ -106,7 +110,7 @@ In the Bubble theme, unpaired bases that would overlap are nudged apart for disp
 
 ### Bubble theme on the rRNA presets
 
-The 5S and 5.8S templates store coordinates tuned for plain text, which are too tight for one circle per base. When the Bubble theme is active on these presets, the tool keeps the template's pairing map and re-arranges the coordinates from it: stacked pairs become ladders, each loop becomes a circle, and a long unpaired exterior (the 5.8S leader and tail) runs around an open ring. Switching back to `Publication` or `Light` restores the fixed template coordinates. Entering or leaving Bubble on an rRNA preset rebuilds the scaffold, so manual drags made in the other arrangement are not carried across.
+The 5S and 5.8S presets generate their coordinates from the template's pairing map: stacked pairs become ladders, each loop becomes a circle, and a long unpaired exterior (the 5.8S leader and tail) runs around an open ring. The text themes use tighter spacing; the Bubble theme uses the same arrangement with room for one circle per base. Switching back to `Publication` or `Light` restores the text spacing. Entering or leaving Bubble on an rRNA preset rebuilds the scaffold, so manual drags made in the other arrangement are not carried across.
 
 | 5S rRNA | 5.8S rRNA |
 | --- | --- |

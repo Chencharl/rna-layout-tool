@@ -1165,4 +1165,30 @@ assert.ok(
 );
 assert.ok(window58.recommendedCanvasWidth <= mature58.recommendedCanvasWidth, "canvas only widens for the 3 prime extension");
 
+
+// 5.8S text-theme coordinates are generated from the pairing: nothing overlaps or leaves the canvas.
+[
+  ["153-nt window", window58],
+  ["mature 157 nt", mature58],
+  ["5 prime-extended", long58],
+  ["5 prime-truncated", truncated58],
+].forEach(([name, layout]) => {
+  const nodes = layout.nucleotides;
+  for (let left = 0; left < nodes.length; left += 1) {
+    assert.ok(nodes[left].x >= 40 && nodes[left].x <= layout.recommendedCanvasWidth - 40, `5.8S ${name}: x inside canvas`);
+    assert.ok(nodes[left].y >= 40 && nodes[left].y <= layout.recommendedCanvasHeight - 40, `5.8S ${name}: y inside canvas`);
+    for (let right = left + 1; right < nodes.length; right += 1) {
+      const distance = Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y);
+      assert.ok(distance >= 20, `5.8S ${name}: positions ${nodes[left].pos} and ${nodes[right].pos} overlap (${distance.toFixed(1)})`);
+    }
+  }
+});
+// The 5 prime end starts left of the opening and the chain first moves down the left side.
+assert.ok(mature58.nucleotides[0].x < mature58.nucleotides[156].x, "5.8S 5 prime end sits left of the 3 prime end");
+assert.ok(mature58.nucleotides[20].y > mature58.nucleotides[0].y, "5.8S leader descends from the 5 prime end");
+assert.ok(mature58.nucleotides[20].x < mature58.nucleotides[0].x, "5.8S leader runs down the left side");
+const short58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.slice(0, 40).split(""));
+assert.equal(short58.stems.length, 0, "a fragment without any template pair has no stems");
+assert.ok(short58.nucleotides.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)), "an unpaired fragment still gets coordinates");
+
 console.log("structure layout tests passed");
