@@ -13,10 +13,14 @@
  *   canonical   (153 nt)   → direct 1-to-1 mapping
  *   long  5.8S  (>153 nt)  → extra 5′ positions, drawn unpaired
  *
- * Canonical pairing map (1-based positions):
- *   Stem-A (8 bp):  52↔115, 53↔114, 54↔113, 55↔112, 56↔111, 57↔110, 58↔109, 59↔108
- *   Stem-B (9 bp):  61↔88,  62↔87,  63↔86,  64↔85,  65↔84,  66↔83,  67↔82,  68↔81,  69↔80
- *   Stem-D (6 bp):  116↔132, 117↔131, 118↔130, 119↔129, 120↔128, 121↔127
+ * Canonical pairing (1-based positions), from the published human structure:
+ *   41-43 ↔ 98-100    closes the central multiloop
+ *   44-46 ↔ 55-57     hairpin
+ *   63 ↔ 94, 65-67 ↔ 89-91   hairpin with a 21-nt loop
+ *   105-106 ↔ 111-112  hairpin
+ *   113-120 ↔ 128-135  GC-rich 3′ hairpin
+ * Positions 1-40 and 136-153 are unpaired here; in the ribosome these ends
+ * pair with 28S rRNA, which a standalone 5.8S figure cannot show.
  */
 
 import { getRenderableBase } from "./annotations";
@@ -30,15 +34,28 @@ import type { RnaNucleotide, RnaPairStatus, RnaStem } from "./types";
 export const RRNA_5_8S_CANONICAL_LENGTH = 153;
 
 /**
- * Sequence that the 153 canonical positions correspond to: human 5.8S rRNA,
- * GenBank U13369.1 positions 6624-6776 (the human entry in the Rfam RF00002
- * seed alignment). The mature 157-nt human 5.8S has one more base at the 5′ end
- * and three more (CUU) at the 3′ end. Every template pair is Watson-Crick or
- * G-U on this sequence. Input sequences are aligned to it by identity so that
- * extra bases at either end do not shift the template.
+ * Reference for the 153 canonical positions.
+ *
+ * Sequence: human 5.8S rRNA, GenBank U13369.1 positions 6624-6776 (RNAcentral
+ * URS00006CE1FB; also the human entry in the Rfam RF00002 seed alignment). The
+ * mature 157-nt human 5.8S (RNAcentral URS0000005270) has one more base at the
+ * 5′ end and three more (CUU) at the 3′ end.
+ *
+ * Structure: the secondary structure RNAcentral publishes for that sequence,
+ * drawn by R2DT from the RiboVision template, which is derived from the
+ * three-dimensional structure of the ribosome. 20 base pairs, 19 Watson-Crick
+ * and 1 G-U on the human sequence. 19 of the 20 are also in the Rfam RF00002
+ * comparative consensus (European LSU rRNA database, PMID 11125083).
+ *
+ * The pairing is taken from that reference, never predicted here. Input
+ * sequences are aligned to the reference by identity so that extra bases at
+ * either end do not shift the template.
  */
 export const RRNA_5_8S_REFERENCE_SEQUENCE =
   "GACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCUAGCUGCGAGAAUUAAUGUGAAUUGCAGGACACAUUGAUCAUCGACACUUCGAACGCACUUGCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCG";
+
+export const RRNA_5_8S_REFERENCE_STRUCTURE =
+  "........................................((((((........))).....(.(((.....................)))..)...)))....((....))((((((((.......))))))))..................";
 
 /** Minimum identity over the overlap for sequence-based alignment to be trusted. */
 const ALIGNMENT_MIN_IDENTITY = 0.8;
@@ -55,17 +72,32 @@ const TEMPLATE_CANVAS = { width: 1280, height: 980 };
 // Canonical pairing map (1-based positions, 153-nt reference)
 // ---------------------------------------------------------------------------
 
-const CANONICAL_PAIRS: readonly [number, number][] = [
-  // Stem-A (8 bp)
-  [52, 115], [53, 114], [54, 113], [55, 112],
-  [56, 111], [57, 110], [58, 109], [59, 108],
-  // Stem-B (9 bp)
-  [61, 88], [62, 87], [63, 86], [64, 85],
-  [65, 84], [66, 83], [67, 82], [68, 81], [69, 80],
-  // Stem-D (6 bp)
-  [116, 132], [117, 131], [118, 130],
-  [119, 129], [120, 128], [121, 127],
-];
+function parseReferencePairs(structure: string): Array<[number, number]> {
+  const pairs: Array<[number, number]> = [];
+  const stack: number[] = [];
+
+  structure.split("").forEach((symbol, index) => {
+    if (symbol === "(") {
+      stack.push(index + 1);
+    } else if (symbol === ")") {
+      const open = stack.pop();
+      if (open === undefined) {
+        throw new Error("5.8S rRNA reference structure is unbalanced.");
+      }
+      pairs.push([open, index + 1]);
+    }
+  });
+
+  if (stack.length > 0 || structure.length !== RRNA_5_8S_CANONICAL_LENGTH) {
+    throw new Error("5.8S rRNA reference structure must be balanced and 153 positions long.");
+  }
+
+  return pairs.sort((left, right) => left[0] - right[0]);
+}
+
+const CANONICAL_PAIRS: ReadonlyArray<readonly [number, number]> = parseReferencePairs(
+  RRNA_5_8S_REFERENCE_STRUCTURE,
+);
 
 // ---------------------------------------------------------------------------
 // Pair-status helper

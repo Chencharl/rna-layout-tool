@@ -1056,7 +1056,8 @@ assert.equal(human5S.length, 120, "human 5S reference is 120 nt");
   chain.slice(0, -1).forEach((node, index) => {
     const next = chain[index + 1];
     const step = Math.hypot(node.x - next.x, node.y - next.y);
-    assert.ok(step <= RADIAL_SPACING * 2.4 + 2, `${name}: backbone step ${node.pos}->${next.pos} stays short (${step.toFixed(1)})`);
+    // A helix next to a loop's closing pair may be given up to 7 extra steps of room to avoid collisions.
+    assert.ok(step <= RADIAL_SPACING * 8 + 2, `${name}: backbone step ${node.pos}->${next.pos} stays bounded (${step.toFixed(1)})`);
   });
 
   // The stored template is untouched and the function is deterministic.
@@ -1124,12 +1125,37 @@ function pairCounts(layout) {
 }
 
 const window58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.split(""));
-assert.deepEqual(pairCounts(window58), { normal: 20, wobble: 3 }, "every 5.8S template pair is Watson-Crick or G-U on the reference window");
+assert.deepEqual(pairCounts(window58), { normal: 19, wobble: 1 }, "every 5.8S template pair is Watson-Crick or G-U on the reference window");
 assert.deepEqual(window58.warnings, [], "the 153-nt reference window maps without warnings");
+// The 5.8S pairing is the published human structure (RNAcentral R2DT, RiboVision template).
+const { RRNA_5_8S_REFERENCE_STRUCTURE } = require(path.join(outDir, "rrna5_8s.js"));
+assert.equal(RRNA_5_8S_REFERENCE_STRUCTURE.length, 153, "5.8S reference structure covers 153 positions");
+assert.equal(window58.stems.length, 20, "5.8S reference structure has 20 base pairs");
+assert.deepEqual(
+  window58.stems.map((stem) => [stem.from, stem.to]),
+  [
+    [41, 100], [42, 99], [43, 98],
+    [44, 57], [45, 56], [46, 55],
+    [63, 94],
+    [65, 91], [66, 90], [67, 89],
+    [105, 112], [106, 111],
+    [113, 135], [114, 134], [115, 133], [116, 132], [117, 131], [118, 130], [119, 129], [120, 128],
+  ],
+  "5.8S pairs match the published human structure",
+);
+const paired58 = new Set(window58.stems.flatMap((stem) => [stem.from, stem.to]));
+assert.ok(
+  [...Array(40).keys()].every((index) => !paired58.has(index + 1)),
+  "5.8S positions 1-40 are unpaired in the standalone figure (they pair with 28S in the ribosome)",
+);
+assert.ok(
+  [...Array(18).keys()].every((index) => !paired58.has(136 + index)),
+  "5.8S positions 136-153 are unpaired in the standalone figure",
+);
 
 // Mature 157-nt human 5.8S: one extra 5 prime base and three extra 3 prime bases (CUU).
 const mature58 = buildRrna5_8sLayout(human5_8S.split(""));
-assert.deepEqual(pairCounts(mature58), { normal: 20, wobble: 3 }, "mature 157-nt human 5.8S keeps the template in register");
+assert.deepEqual(pairCounts(mature58), { normal: 19, wobble: 1 }, "mature 157-nt human 5.8S keeps the template in register");
 assert.deepEqual(
   mature58.stems.map((stem) => [stem.from - 1, stem.to - 1]),
   window58.stems.map((stem) => [stem.from, stem.to]),
@@ -1146,18 +1172,18 @@ assert.ok(
 
 // A 5 prime-extended form (long 5.8S) still aligns by sequence.
 const long58 = buildRrna5_8sLayout(("UACGGAU" + human5_8S).split(""));
-assert.deepEqual(pairCounts(long58), { normal: 20, wobble: 3 }, "5 prime-extended 5.8S keeps the template in register");
+assert.deepEqual(pairCounts(long58), { normal: 19, wobble: 1 }, "5 prime-extended 5.8S keeps the template in register");
 
 // A 5 prime-truncated form aligns to the 3 prime part of the window.
 const truncated58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.slice(12).split(""));
 assert.equal(truncated58.nucleotides[0].positionLabel ?? null, null, "truncated form starts inside the window");
 assert.equal(truncated58.nucleotides[7].positionLabel, "20", "truncated 5.8S keeps canonical numbering");
-assert.deepEqual(pairCounts(truncated58), { normal: 20, wobble: 3 }, "truncated 5.8S keeps all template pairs");
+assert.deepEqual(pairCounts(truncated58), { normal: 19, wobble: 1 }, "truncated 5.8S keeps all template pairs");
 
 // Unrelated input falls back to the 3 prime alignment rule.
 const unrelated58 = buildRrna5_8sLayout("A".repeat(160).split(""));
 assert.equal(unrelated58.nucleotides[7].positionLabel, "1", "unrelated 160-nt input is 3 prime aligned (7 extra 5 prime positions)");
-assert.equal(unrelated58.stems.length, 23, "fallback alignment still draws every template pair");
+assert.equal(unrelated58.stems.length, 20, "fallback alignment still draws every template pair");
 
 assert.ok(
   mature58.recommendedCanvasWidth >= Math.max(...mature58.nucleotides.map((node) => node.x)) + 40,

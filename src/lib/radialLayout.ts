@@ -97,11 +97,58 @@ function collectItems(partner: Array<number | null>, from: number, to: number): 
   return items;
 }
 
+/**
+ * Extra room (in backbone steps) between a loop's closing pair and a helix that
+ * leaves the loop right next to it. Without it such a helix points back toward
+ * the parent and can run into it; the layout retries with more room until no
+ * two positions collide.
+ */
+const CLOSING_PAD_STEPS = [0, 1.5, 2.5, 3.5, 5, 7];
+
+function countCollisions(points: RadialPoint[], minimum: number): number {
+  let collisions = 0;
+  for (let left = 0; left < points.length; left += 1) {
+    for (let right = left + 1; right < points.length; right += 1) {
+      if (Math.hypot(points[left].x - points[right].x, points[left].y - points[right].y) < minimum) {
+        collisions += 1;
+      }
+    }
+  }
+  return collisions;
+}
+
 export function buildRadialLayout(
   nucleotides: RnaNucleotide[],
   stems: RnaStem[],
   spacing = RADIAL_SPACING,
   pairWidth = RADIAL_PAIR_WIDTH,
+): RadialLayoutResult | null {
+  let best: { result: RadialLayoutResult; collisions: number } | null = null;
+
+  for (const closingPad of CLOSING_PAD_STEPS) {
+    const result = buildRadialLayoutOnce(nucleotides, stems, spacing, pairWidth, closingPad);
+    if (!result) {
+      return null;
+    }
+
+    const collisions = countCollisions([...result.positions.values()], spacing * 0.9);
+    if (!best || collisions < best.collisions) {
+      best = { result, collisions };
+    }
+    if (collisions === 0) {
+      break;
+    }
+  }
+
+  return best ? best.result : null;
+}
+
+function buildRadialLayoutOnce(
+  nucleotides: RnaNucleotide[],
+  stems: RnaStem[],
+  spacing: number,
+  pairWidth: number,
+  closingPad: number,
 ): RadialLayoutResult | null {
   const chain = [...nucleotides].sort(
     (left, right) => (left.sequenceIndex ?? left.pos) - (right.sequenceIndex ?? right.pos) || left.pos - right.pos,
@@ -150,12 +197,16 @@ export function buildRadialLayout(
     items.forEach((item, index) => {
       // Two helices that leave a loop side by side get extra room between them.
       const besideStem = item.kind === "stem" && index > 0 && items[index - 1].kind === "stem";
-      chords.push(besideStem ? spacing * SIBLING_STEM_GAP : spacing);
+      // A helix right next to the closing pair is pushed round the loop so it does not fold back.
+      const besideClosing = item.kind === "stem" && index === 0;
+      chords.push(
+        besideStem ? spacing * SIBLING_STEM_GAP : besideClosing ? spacing * (1 + closingPad) : spacing,
+      );
       if (item.kind === "stem") {
         chords.push(pairWidth);
       }
     });
-    chords.push(spacing);
+    chords.push(items[items.length - 1].kind === "stem" ? spacing * (1 + closingPad) : spacing);
 
     const radius = solveRadius([...chords, pairWidth]);
     const closingAngle = 2 * Math.asin(Math.min(1, pairWidth / (2 * radius)));

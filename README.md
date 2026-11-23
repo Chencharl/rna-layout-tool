@@ -59,15 +59,15 @@ Template coordinates for the text themes are generated from that pairing. Sequen
 
 ## 5.8S rRNA Notes
 
-The 5.8S preset has 153 canonical positions. They correspond to human 5.8S rRNA, GenBank U13369.1 positions 6624-6776, which is the human entry in the Rfam RF00002 seed alignment. All 23 template pairs are Watson-Crick or G·U on that sequence.
+The 5.8S preset has 153 canonical positions: human 5.8S rRNA, GenBank U13369.1 positions 6624-6776 (RNAcentral URS00006CE1FB).
 
-Input is aligned to that 153-nt reference by sequence identity, so extra bases at either end do not shift the template. The mature 157-nt human 5.8S maps with one extra 5′ base and three extra 3′ bases (CUU), drawn unpaired. A 5′-extended or 5′-truncated form keeps canonical numbering. When the input does not resemble the reference, the 3′ ends are aligned instead.
+The pairing is the published human structure and is not predicted by the tool. It is the secondary structure RNAcentral gives for that sequence, drawn by R2DT from the RiboVision template, which is derived from the three-dimensional structure of the ribosome: 20 base pairs, 19 Watson-Crick and 1 G·U. 19 of the 20 are also in the Rfam RF00002 comparative consensus (European LSU rRNA database, PMID 11125083).
 
-Coordinates are generated from the pairing map in every theme: stacked pairs are ladders, loops are circles, and the long unpaired leader and tail run around an open ring with the 5′ end descending on the left. There is no hand-entered coordinate table, so positions do not overlap and the figure stays inside the canvas for extended or truncated forms.
+Positions 1-40 and 136-153 are unpaired in a standalone 5.8S figure. In the ribosome these ends pair with 28S rRNA.
 
-![Human 5.8S rRNA in the Publication theme](docs/rrna-5_8s-publication.svg)
+Input is aligned to the 153-nt reference by sequence identity, so extra bases at either end do not shift the template. The mature 157-nt human 5.8S maps with one extra 5′ base and three extra 3′ bases (CUU), drawn unpaired. When the input does not resemble the reference, the 3′ ends are aligned instead.
 
-The template's three helices (52-59 with 108-115, 61-69 with 80-88, 116-121 with 127-132) are one structure model. The Rfam RF00002 consensus (published structure, PMID 11125083) is a different model: it shares the 3′ hairpin and extends it to 113-121 with 127-135, but pairs 40-47, 65-67, 72-73 and 105-107 differently. The tool keeps the template model; it does not predict or choose between them.
+Coordinates are generated from the pairing in every theme: stacked pairs are ladders, loops are circles, and the unpaired ends run around an open ring with the 5′ end descending on the left. The example images under `docs/` for 5.8S predate this pairing and need to be re-exported.
 
 ## Modification Input
 
