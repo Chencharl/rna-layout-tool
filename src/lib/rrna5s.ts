@@ -1,4 +1,5 @@
 import { getRenderableBase } from "./annotations";
+import { buildRadialLayout } from "./radialLayout";
 import type { RnaNucleotide, RnaPairStatus, RnaStem } from "./types";
 
 export type Rrna5STemplateRow = {
@@ -33,134 +34,181 @@ export type RrnaStructureAnnotation = {
 };
 
 const RRNA_5S_LENGTH = 120;
-const BASE_PATTERN = ["G", "C", "U", "A"] as const;
 
-function baseForPosition(position: number): Rrna5STemplateRow["base"] {
-  return BASE_PATTERN[(position - 1) % BASE_PATTERN.length];
-}
+/**
+ * Reference used for the fixed 5S template.
+ *
+ * Sequence: human 5S rRNA, positions 1-120 (GenBank X71804.1, the human entry
+ * in the Rfam RF00001 seed alignment; the seed covers 1-119 and position 120 is
+ * the next U of the mature 3' end).
+ * Structure: Rfam RF00001 consensus secondary structure (published structure,
+ * PMID 11283358) projected onto that sequence. 34 base pairs: 30 Watson-Crick
+ * and 4 G-U on the human sequence. Position 120 is unpaired.
+ *
+ * The pairing is taken from the reference, never predicted here.
+ */
+export const RRNA_5S_REFERENCE_SEQUENCE =
+  "GUCUACGGCCAUACCACCCUGAACGCGCCCGAUCUCGUCUGAUCUCGGAAGCUAAGCAGGGUCGGGCCUGGUUAGUACUUGGAUGGGAGACCGCCUGGGAAUACCGGGUGCUGUAGGCUU";
+export const RRNA_5S_REFERENCE_STRUCTURE =
+  "(((((((((....((.(((((...((..((((((......))..))))..))....)))))..))(((.((....(.((.....((....)).....)).)..)).))))))))))))..";
+
+// Spacing for the text themes; the Bubble theme re-arranges from the same pairs.
+const TEMPLATE_SPACING = 27;
+const TEMPLATE_PAIR_WIDTH = 60;
+const TEMPLATE_CANVAS = { width: 1280, height: 980 };
 
 function shouldShowPositionLabel(position: number) {
   return position === 1 || position % 10 === 0 || position === RRNA_5S_LENGTH;
 }
 
-function makeRow(
-  position: number,
-  x: number,
-  y: number,
-  region: Rrna5STemplateRow["region"],
-): Rrna5STemplateRow {
-  return {
-    position,
-    base: baseForPosition(position),
-    x: Math.round(x),
-    y: Math.round(y),
-    paired_with: null,
-    region,
-    label: shouldShowPositionLabel(position) ? String(position) : undefined,
-  };
-}
+function parseReferencePairs(structure: string): Array<number | null> {
+  const partner: Array<number | null> = Array.from({ length: structure.length }, () => null);
+  const stack: number[] = [];
 
-function addStem(
-  rows: Map<number, Rrna5STemplateRow>,
-  fivePrimePositions: number[],
-  threePrimePositions: number[],
-  xLeft: number,
-  xRight: number,
-  yStart: number,
-  yStep: number,
-  region: Rrna5STemplateRow["region"],
-) {
-  fivePrimePositions.forEach((position, index) => {
-    const partner = threePrimePositions[index];
-    const y = yStart + index * yStep;
-    const left = makeRow(position, xLeft, y, region);
-    const right = makeRow(partner, xRight, y, region);
-
-    left.paired_with = partner;
-    right.paired_with = position;
-    rows.set(position, left);
-    rows.set(partner, right);
+  structure.split("").forEach((symbol, index) => {
+    if (symbol === "(") {
+      stack.push(index);
+    } else if (symbol === ")") {
+      const open = stack.pop();
+      if (open === undefined) {
+        throw new Error("5S rRNA reference structure is unbalanced.");
+      }
+      partner[open] = index;
+      partner[index] = open;
+    }
   });
+
+  if (stack.length > 0) {
+    throw new Error("5S rRNA reference structure is unbalanced.");
+  }
+
+  return partner;
 }
 
-function addLine(
-  rows: Map<number, Rrna5STemplateRow>,
-  positions: number[],
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  region: Rrna5STemplateRow["region"],
-) {
-  positions.forEach((position, index) => {
-    const t = positions.length === 1 ? 0 : index / (positions.length - 1);
-    rows.set(
-      position,
-      makeRow(
-        position,
-        from.x + (to.x - from.x) * t,
-        from.y + (to.y - from.y) * t,
-        region,
-      ),
-    );
-  });
-}
+/** Region of every position, derived from the reference pairing. */
+function classifyRegions(partner: Array<number | null>): Array<Rrna5STemplateRow["region"]> {
+  const count = partner.length;
+  const regions: Array<Rrna5STemplateRow["region"]> = Array.from({ length: count }, () => "junction");
+  // Enclosing pair (index of its 5' base) for every position, or -1 for the exterior.
+  const enclosing: number[] = Array.from({ length: count }, () => -1);
+  const stack: number[] = [];
 
-function addArc(
-  rows: Map<number, Rrna5STemplateRow>,
-  positions: number[],
-  center: { x: number; y: number },
-  radius: { x: number; y: number },
-  startDegrees: number,
-  endDegrees: number,
-  region: Rrna5STemplateRow["region"],
-) {
-  positions.forEach((position, index) => {
-    const t = positions.length === 1 ? 0 : index / (positions.length - 1);
-    const degrees = startDegrees + (endDegrees - startDegrees) * t;
-    const radians = (degrees * Math.PI) / 180;
+  for (let index = 0; index < count; index += 1) {
+    const mate = partner[index];
+    if (mate !== null && mate < index) {
+      stack.pop();
+    }
+    enclosing[index] = stack.length > 0 ? stack[stack.length - 1] : -1;
+    if (mate !== null && mate > index) {
+      stack.push(index);
+    }
+  }
 
-    rows.set(
-      position,
-      makeRow(
-        position,
-        center.x + Math.cos(radians) * radius.x,
-        center.y + Math.sin(radians) * radius.y,
-        region,
-      ),
-    );
-  });
-}
+  // Helices that continue the exterior-closing stack form the terminal stem.
+  const terminal = new Set<number>();
+  for (let index = 0; index < count; index += 1) {
+    const mate = partner[index];
+    if (mate === null || mate < index) {
+      continue;
+    }
+    const parent = enclosing[index];
+    const stacksOnParent = parent >= 0 && parent + 1 === index && (partner[parent] as number) - 1 === mate;
+    if (parent === -1 || (stacksOnParent && terminal.has(parent))) {
+      terminal.add(index);
+    }
+    const region = terminal.has(index) ? "terminal_stem" : "internal_stem";
+    regions[index] = region;
+    regions[mate] = region;
+  }
 
-function buildTemplateRows() {
-  const rows = new Map<number, Rrna5STemplateRow>();
-
-  addStem(rows, [1, 2, 3, 4, 5, 6, 7, 8], [120, 119, 118, 117, 116, 115, 114, 113], 280, 360, 340, 28, "terminal_stem");
-  addLine(rows, [9, 10, 11, 12, 13, 14], { x: 300, y: 590 }, { x: 470, y: 595 }, "internal_loop");
-
-  addStem(rows, [15, 16, 17, 18, 19, 20, 21, 22], [54, 53, 52, 51, 50, 49, 48, 47], 510, 590, 545, -28, "internal_stem");
-  addLine(rows, [23, 24], { x: 485, y: 315 }, { x: 455, y: 275 }, "bulge");
-  addStem(rows, [25, 26, 27, 28, 29, 30, 31], [45, 44, 43, 42, 41, 40, 39], 420, 500, 245, -28, "internal_stem");
-  addArc(rows, [32, 33, 34, 35, 36, 37, 38], { x: 460, y: 52 }, { x: 72, y: 54 }, 160, -160, "hairpin_loop");
-  rows.set(46, makeRow(46, 535, 300, "bulge"));
-
-  addLine(rows, [55, 56, 57, 58, 59, 60], { x: 625, y: 555 }, { x: 700, y: 605 }, "junction");
-  addStem(rows, [61, 62, 63, 64, 65, 66, 67, 68], [99, 98, 97, 96, 95, 94, 93, 92], 700, 780, 630, 28, "internal_stem");
-  addLine(rows, [69, 70], { x: 820, y: 840 }, { x: 865, y: 815 }, "bulge");
-  addStem(rows, [71, 72, 73, 74, 75, 76, 77], [89, 88, 87, 86, 85, 84, 83], 880, 960, 790, -28, "internal_stem");
-  addArc(rows, [78, 79, 80, 81, 82], { x: 920, y: 575 }, { x: 88, y: 54 }, 145, -145, "hairpin_loop");
-  addLine(rows, [90, 91], { x: 865, y: 815 }, { x: 805, y: 826 }, "bulge");
-
-  addStem(rows, [100, 101, 102, 103, 104, 105], [112, 111, 110, 109, 108, 107], 765, 845, 530, -28, "internal_stem");
-  rows.set(106, makeRow(106, 805, 342, "hairpin_loop"));
-
-  return Array.from({ length: RRNA_5S_LENGTH }, (_, index) => {
-    const position = index + 1;
-    const row = rows.get(position);
-
-    if (!row) {
-      throw new Error(`5S rRNA template is missing position ${position}.`);
+  for (let index = 0; index < count; index += 1) {
+    if (partner[index] !== null) {
+      continue;
     }
 
-    return row;
+    const open = enclosing[index];
+    if (open === -1) {
+      regions[index] = "junction";
+      continue;
+    }
+
+    const close = partner[open] as number;
+    let helices = 0;
+    let unpairedBefore = 0;
+    let unpairedAfter = 0;
+    let cursor = open + 1;
+    while (cursor < close) {
+      const mate = partner[cursor];
+      if (mate !== null && mate > cursor) {
+        helices += 1;
+        cursor = mate + 1;
+      } else {
+        if (helices === 0) {
+          unpairedBefore += 1;
+        } else {
+          unpairedAfter += 1;
+        }
+        cursor += 1;
+      }
+    }
+
+    if (helices === 0) {
+      regions[index] = "hairpin_loop";
+    } else if (helices === 1) {
+      regions[index] = unpairedBefore === 0 || unpairedAfter === 0 ? "bulge" : "internal_loop";
+    } else {
+      regions[index] = "junction";
+    }
+  }
+
+  return regions;
+}
+
+function buildTemplateRows(): Rrna5STemplateRow[] {
+  if (
+    RRNA_5S_REFERENCE_SEQUENCE.length !== RRNA_5S_LENGTH ||
+    RRNA_5S_REFERENCE_STRUCTURE.length !== RRNA_5S_LENGTH
+  ) {
+    throw new Error("5S rRNA reference sequence and structure must both be 120 positions long.");
+  }
+
+  const partner = parseReferencePairs(RRNA_5S_REFERENCE_STRUCTURE);
+  const regions = classifyRegions(partner);
+  const nodes = Array.from({ length: RRNA_5S_LENGTH }, (_, index) => ({
+    pos: index + 1,
+    base: RRNA_5S_REFERENCE_SEQUENCE[index],
+    x: 0,
+    y: 0,
+  }));
+  const stems = partner.flatMap((mate, index) =>
+    mate !== null && mate > index ? [{ from: index + 1, to: mate + 1 }] : [],
+  );
+  const layout = buildRadialLayout(nodes, stems, TEMPLATE_SPACING, TEMPLATE_PAIR_WIDTH);
+
+  if (!layout) {
+    throw new Error("5S rRNA template could not be laid out from the reference structure.");
+  }
+
+  const offsetX = (TEMPLATE_CANVAS.width - layout.width) / 2;
+  const offsetY = (TEMPLATE_CANVAS.height - layout.height) / 2;
+
+  return nodes.map((node, index) => {
+    const point = layout.positions.get(node.pos);
+    const mate = partner[index];
+
+    if (!point) {
+      throw new Error(`5S rRNA template is missing position ${node.pos}.`);
+    }
+
+    return {
+      position: node.pos,
+      base: node.base as Rrna5STemplateRow["base"],
+      x: Math.round(point.x + offsetX),
+      y: Math.round(point.y + offsetY),
+      paired_with: mate === null ? null : mate + 1,
+      region: regions[index],
+      label: shouldShowPositionLabel(node.pos) ? String(node.pos) : undefined,
+    };
   });
 }
 

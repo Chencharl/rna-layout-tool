@@ -166,11 +166,56 @@ assert.ok(rrna5sLayout.stems.length > 25, "5S rRNA layout draws template-defined
 assert.deepEqual(
   rrna5sLayout.stems.slice(0, 3).map((stem) => [stem.from, stem.to]),
   [
-    [1, 120],
-    [2, 119],
-    [3, 118],
+    [1, 118],
+    [2, 117],
+    [3, 116],
   ],
-  "5S rRNA terminal stem keeps 5 prime and 3 prime ends paired near the template stem",
+  "5S rRNA helix I pairs 1-9 with 110-118, as in the Rfam RF00001 reference",
+);
+
+// The 5S template pairing comes from a published reference, not from a guess.
+const {
+  RRNA_5S_REFERENCE_SEQUENCE,
+  RRNA_5S_REFERENCE_STRUCTURE,
+} = require(path.join(outDir, "rrna5s.js"));
+assert.equal(RRNA_5S_REFERENCE_SEQUENCE.length, 120, "5S reference sequence covers 120 positions");
+assert.equal(RRNA_5S_REFERENCE_STRUCTURE.length, 120, "5S reference structure covers 120 positions");
+assert.deepEqual(
+  RRNA_5S_TEMPLATE_ROWS.map((row) => row.base).join(""),
+  RRNA_5S_REFERENCE_SEQUENCE,
+  "5S template placeholder bases are the human reference sequence",
+);
+const rrna5sReferenceLayout = buildRrna5SLayout(RRNA_5S_REFERENCE_SEQUENCE.split(""));
+assert.equal(rrna5sReferenceLayout.stems.length, 34, "5S reference structure has 34 base pairs");
+assert.deepEqual(
+  rrna5sReferenceLayout.stems.reduce((counts, stem) => {
+    counts[stem.pairStatus] = (counts[stem.pairStatus] ?? 0) + 1;
+    return counts;
+  }, {}),
+  { normal: 30, wobble: 4 },
+  "every 5S reference pair is Watson-Crick or G-U on the human sequence",
+);
+RRNA_5S_TEMPLATE_ROWS.forEach((row) => {
+  if (row.paired_with !== null) {
+    assert.equal(
+      RRNA_5S_TEMPLATE_ROWS[row.paired_with - 1].paired_with,
+      row.position,
+      `5S template pairing is symmetric at ${row.position}`,
+    );
+    assert.ok(row.region === "terminal_stem" || row.region === "internal_stem", "paired 5S positions are stem regions");
+  } else {
+    assert.ok(!row.region.endsWith("_stem"), "unpaired 5S positions are loop or junction regions");
+  }
+});
+assert.deepEqual(
+  RRNA_5S_TEMPLATE_ROWS.filter((row) => row.region === "terminal_stem").map((row) => row.position),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 110, 111, 112, 113, 114, 115, 116, 117, 118],
+  "5S terminal stem is helix I",
+);
+assert.equal(RRNA_5S_TEMPLATE_ROWS[119].paired_with, null, "5S position 120 is unpaired");
+assert.ok(
+  RRNA_5S_TEMPLATE_ROWS.every((row) => row.x >= 60 && row.x <= 1220 && row.y >= 60 && row.y <= 920),
+  "5S template coordinates fit the default canvas",
 );
 assert.deepEqual(
   rrna5sLayout.nucleotides

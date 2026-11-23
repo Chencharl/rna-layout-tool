@@ -50,6 +50,13 @@ position | base | x | y | paired_with | region | optional label
 
 The first implementation targets 120 nt 5S rRNA. If the input sequence length is not 120, the app shows a warning and keeps the fixed template visible instead of drawing a broken partial structure.
 
+The 5S pairing is taken from a published reference and is not predicted by the tool:
+
+- Sequence: human 5S rRNA, positions 1-120 (GenBank X71804.1, the human entry in the Rfam RF00001 seed alignment).
+- Structure: the Rfam RF00001 consensus secondary structure (published structure, PMID 11283358) projected onto that sequence. It has 34 base pairs, 30 Watson-Crick and 4 G·U on the human sequence, with helix I pairing 1-9 with 110-118.
+
+Template coordinates for the text themes are generated from that pairing. Sequences from other species are drawn on the same pairing; pairs that are not Watson-Crick or G·U for the pasted sequence are marked.
+
 ## Modification Input
 
 The sequence parser recognizes both standard bases and modification tokens. Examples:
@@ -97,7 +104,7 @@ The 5S and 5.8S templates store coordinates tuned for plain text, which are too 
 | --- | --- |
 | ![Human 5S rRNA in the Bubble theme](docs/rrna-5s-bubble.svg) | ![Human 5.8S rRNA in the Bubble theme](docs/rrna-5_8s-bubble.svg) |
 
-Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction; many open circles mean the template pairing does not match that sequence well.
+Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction. The 5S template follows the Rfam RF00001 reference, so the human 5S figure has no open circles. The 5.8S template pairing has not been checked against a reference yet; its open circles mark pairs that do not fit the human sequence.
 
 Older project JSON files using removed themes are normalized to `Publication` on import.
 
