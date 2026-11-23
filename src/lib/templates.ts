@@ -489,6 +489,7 @@ export function remapProjectToTemplate(
     const arranged = arrangeRrnaForTheme(layout.nucleotides, layout.stems, {
       ...project.settings,
       canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+      canvasWidth: Math.max(project.settings.canvasWidth, layout.recommendedCanvasWidth),
     });
 
     return {
@@ -606,6 +607,7 @@ export function syncProjectToSequence(
     const arranged = arrangeRrnaForTheme(labeledNodes, layout.stems, {
       ...project.settings,
       canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+      canvasWidth: Math.max(project.settings.canvasWidth, layout.recommendedCanvasWidth),
     });
 
     return {

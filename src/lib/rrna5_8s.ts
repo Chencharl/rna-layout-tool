@@ -5,6 +5,9 @@
  * reference publication figure.  Variable-length sequences are handled by
  * extending the 5′ tail rather than recomputing the whole topology:
  *
+ *   Input is first aligned to the 153-nt reference sequence by identity, so the
+ *   mature 157-nt human 5.8S maps with 1 extra 5′ and 3 extra 3′ positions.
+ *   When the input does not resemble the reference, the 3′ ends are aligned:
  *   short 5.8S  (≤153 nt)  → align to the 3′ end of the table; truncated 5′ tail
  *   canonical   (153 nt)   → direct 1-to-1 mapping
  *   long  5.8S  (>153 nt)  → prepend extra 5′ positions above the canonical leader
@@ -23,6 +26,20 @@ import type { RnaNucleotide, RnaPairStatus, RnaStem } from "./types";
 // ---------------------------------------------------------------------------
 
 export const RRNA_5_8S_CANONICAL_LENGTH = 153;
+
+/**
+ * Sequence that the 153 canonical positions correspond to: human 5.8S rRNA,
+ * GenBank U13369.1 positions 6624-6776 (the human entry in the Rfam RF00002
+ * seed alignment). The mature 157-nt human 5.8S has one more base at the 5′ end
+ * and three more (CUU) at the 3′ end. Every template pair is Watson-Crick or
+ * G-U on this sequence. Input sequences are aligned to it by identity so that
+ * extra bases at either end do not shift the template.
+ */
+export const RRNA_5_8S_REFERENCE_SEQUENCE =
+  "GACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCUAGCUGCGAGAAUUAAUGUGAAUUGCAGGACACAUUGAUCAUCGACACUUCGAACGCACUUGCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCG";
+
+/** Minimum identity over the overlap for sequence-based alignment to be trusted. */
+const ALIGNMENT_MIN_IDENTITY = 0.8;
 
 /** Minimum length before a "truncation" warning fires (5′ tail 11-12 nt short). */
 const TRUNCATION_THRESHOLD = 141;
@@ -275,12 +292,67 @@ function shouldLabel(canonicalPos: number): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Canonical position aligned to the first input base.
+ *
+ * Tries every offset with a large enough overlap and keeps the one with the
+ * most identical bases, provided identity over the overlap is high. Otherwise
+ * the 3′ ends are aligned (the rule this template used before).
+ */
+function findCanonicalStart(sequence: string[]): number {
+  const seqLen = sequence.length;
+  const threePrimeAligned = 1 - (seqLen - RRNA_5_8S_CANONICAL_LENGTH);
+  const bases = sequence.map((token) => (getRenderableBase(token) || token).toUpperCase());
+  const minimumOverlap = Math.ceil(Math.min(seqLen, RRNA_5_8S_CANONICAL_LENGTH) * 0.8);
+  const score = (start: number) => {
+    let overlap = 0;
+    let matches = 0;
+    for (let idx = 0; idx < seqLen; idx += 1) {
+      const canPos = start + idx;
+      if (canPos < 1 || canPos > RRNA_5_8S_CANONICAL_LENGTH) {
+        continue;
+      }
+      overlap += 1;
+      if (bases[idx] === RRNA_5_8S_REFERENCE_SEQUENCE[canPos - 1]) {
+        matches += 1;
+      }
+    }
+    return { overlap, matches };
+  };
+
+  let best = threePrimeAligned;
+  let bestMatches = -1;
+  const fallbackScore = score(threePrimeAligned);
+  if (
+    fallbackScore.overlap >= minimumOverlap &&
+    fallbackScore.matches / fallbackScore.overlap >= ALIGNMENT_MIN_IDENTITY
+  ) {
+    bestMatches = fallbackScore.matches;
+  }
+
+  for (let start = 2 - seqLen; start <= RRNA_5_8S_CANONICAL_LENGTH; start += 1) {
+    const { overlap, matches } = score(start);
+    if (overlap < minimumOverlap || matches / overlap < ALIGNMENT_MIN_IDENTITY) {
+      continue;
+    }
+    // Strictly better only, so the 3′-aligned offset wins ties.
+    if (matches > bestMatches) {
+      best = start;
+      bestMatches = matches;
+    }
+  }
+
+  return best;
+}
+
 /** Bottom y of the canonical 153-nt layout (last SS5 position). */
 const CANONICAL_BOTTOM_Y = COORDS[RRNA_5_8S_CANONICAL_LENGTH][1]; // 786
 /** Top margin above the first nucleotide. */
 const CANVAS_TOP_MARGIN = 40;
 /** Bottom margin below the last nucleotide. */
 const CANVAS_BOTTOM_MARGIN = 80;
+/** Right margin after the last nucleotide. */
+const CANVAS_RIGHT_MARGIN = 60;
 
 /**
  * Build the nucleotide + stem layout for a 5.8S rRNA sequence.
@@ -303,6 +375,7 @@ export function buildRrna5_8sLayout(sequence: string[]): {
   stems: RnaStem[];
   warnings: string[];
   recommendedCanvasHeight: number;
+  recommendedCanvasWidth: number;
 } {
   const seqLen = sequence.length;
   const warnings: string[] = [];
@@ -325,10 +398,22 @@ export function buildRrna5_8sLayout(sequence: string[]): {
   }
 
   // ── Canonical offset ──────────────────────────────────────────────────────
-  // extra > 0  → long form (prepend extra positions)
-  // extra < 0  → truncation (skip first |extra| canonical positions)
-  const extra = seqLen - RRNA_5_8S_CANONICAL_LENGTH;
-  const canonicalStart = 1 - extra; // canonical position that aligns to seq idx 0
+  // canonicalStart is the canonical position that aligns to sequence index 0.
+  // Preferred: slide the input along the reference sequence and take the offset
+  // with the most identical bases. Fallback (unrelated or heavily edited input):
+  // align the 3′ ends, so a longer input gains extra 5′ positions and a shorter
+  // one is treated as 5′-truncated.
+  const canonicalStart = findCanonicalStart(sequence);
+  // Bases before canonical position 1 (5′ extension) and after position 153 (3′ extension).
+  const extra = Math.max(0, 1 - canonicalStart);
+  const extraThreePrime = Math.max(0, canonicalStart + seqLen - 1 - RRNA_5_8S_CANONICAL_LENGTH);
+
+  if (extraThreePrime > 0) {
+    warnings.push(
+      `Aligned to the ${RRNA_5_8S_CANONICAL_LENGTH}-nt reference by sequence: ` +
+      `${extra} extra 5′ and ${extraThreePrime} extra 3′ position${extraThreePrime === 1 ? "" : "s"} are drawn unpaired.`,
+    );
+  }
 
   // ── y-shift for long-form sequences ──────────────────────────────────────
   // When extra > 0 we shift every coordinate DOWN so the first extra position
@@ -337,8 +422,16 @@ export function buildRrna5_8sLayout(sequence: string[]): {
   const yShift = extra > 0 ? extra * LEADER_SPACING : 0;
 
   // ── Recommended canvas height ─────────────────────────────────────────────
-  const bottomY = CANONICAL_BOTTOM_Y + yShift;
-  const recommendedCanvasHeight = bottomY + CANVAS_BOTTOM_MARGIN;
+  // 3′ extension continues the direction of the last two canonical positions.
+  const [lastX, lastY] = COORDS[RRNA_5_8S_CANONICAL_LENGTH];
+  const [previousX, previousY] = COORDS[RRNA_5_8S_CANONICAL_LENGTH - 1];
+  const tailLength = Math.hypot(lastX - previousX, lastY - previousY) || 1;
+  const tailStep = {
+    x: ((lastX - previousX) / tailLength) * LEADER_SPACING,
+    y: ((lastY - previousY) / tailLength) * LEADER_SPACING,
+  };
+  const bottomY = CANONICAL_BOTTOM_Y + yShift + Math.max(0, tailStep.y * extraThreePrime);
+  const recommendedCanvasHeight = Math.ceil(bottomY + CANVAS_BOTTOM_MARGIN);
 
   // ── Build nucleotides ────────────────────────────────────────────────────
   const nucleotides: RnaNucleotide[] = sequence.map((token, idx) => {
@@ -363,9 +456,11 @@ export function buildRrna5_8sLayout(sequence: string[]): {
       // Label every 10th sequence position
       posLabel = (idx + 1) % 10 === 0 ? String(idx + 1) : undefined;
     } else {
-      // canPos > canonical length — safety fallback (should not be reached)
-      x = COORDS[RRNA_5_8S_CANONICAL_LENGTH][0] + (canPos - RRNA_5_8S_CANONICAL_LENGTH) * 20;
-      y = COORDS[RRNA_5_8S_CANONICAL_LENGTH][1] + yShift;
+      // 3′ extension beyond canonical position 153 (for example the CUU of the
+      // mature human 5.8S): continue the tail, unpaired.
+      const beyond = canPos - RRNA_5_8S_CANONICAL_LENGTH;
+      x = Math.round(lastX + tailStep.x * beyond);
+      y = Math.round(lastY + tailStep.y * beyond) + yShift;
       posLabel = undefined;
     }
 
@@ -411,5 +506,9 @@ export function buildRrna5_8sLayout(sequence: string[]): {
     });
   }
 
-  return { nucleotides, stems, warnings, recommendedCanvasHeight };
+  // A 3′ extension can run past the default canvas width; ask for room when it does.
+  const rightmostX = Math.max(...nucleotides.map((nucleotide) => nucleotide.x));
+  const recommendedCanvasWidth = Math.ceil(rightmostX + CANVAS_RIGHT_MARGIN);
+
+  return { nucleotides, stems, warnings, recommendedCanvasHeight, recommendedCanvasWidth };
 }

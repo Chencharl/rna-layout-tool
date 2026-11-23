@@ -1110,4 +1110,59 @@ assert.deepEqual(
   "5.8S tick labels come from the template after a length change",
 );
 
+
+// --- 5.8S: input is aligned to the reference window by sequence ---------------
+const { RRNA_5_8S_REFERENCE_SEQUENCE } = require(path.join(outDir, "rrna5_8s.js"));
+assert.equal(RRNA_5_8S_REFERENCE_SEQUENCE.length, 153, "5.8S reference window is 153 nt");
+assert.equal(human5_8S.indexOf(RRNA_5_8S_REFERENCE_SEQUENCE), 1, "mature human 5.8S contains the reference window after one 5 prime base");
+
+function pairCounts(layout) {
+  return layout.stems.reduce((counts, stem) => {
+    counts[stem.pairStatus] = (counts[stem.pairStatus] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+const window58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.split(""));
+assert.deepEqual(pairCounts(window58), { normal: 20, wobble: 3 }, "every 5.8S template pair is Watson-Crick or G-U on the reference window");
+assert.deepEqual(window58.warnings, [], "the 153-nt reference window maps without warnings");
+
+// Mature 157-nt human 5.8S: one extra 5 prime base and three extra 3 prime bases (CUU).
+const mature58 = buildRrna5_8sLayout(human5_8S.split(""));
+assert.deepEqual(pairCounts(mature58), { normal: 20, wobble: 3 }, "mature 157-nt human 5.8S keeps the template in register");
+assert.deepEqual(
+  mature58.stems.map((stem) => [stem.from - 1, stem.to - 1]),
+  window58.stems.map((stem) => [stem.from, stem.to]),
+  "mature 5.8S pairs are the reference pairs shifted by the single extra 5 prime base",
+);
+assert.ok(mature58.warnings.some((warning) => warning.includes("1 extra 5′ and 3 extra 3′")), "3 prime extension is reported");
+const mature58Paired = new Set(mature58.stems.flatMap((stem) => [stem.from, stem.to]));
+[1, 155, 156, 157].forEach((pos) => assert.ok(!mature58Paired.has(pos), `extension position ${pos} is unpaired`));
+assert.equal(mature58.nucleotides[1].positionLabel, "1", "canonical numbering starts at the second base of the mature form");
+assert.ok(
+  mature58.nucleotides.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)),
+  "3 prime extension positions get coordinates",
+);
+
+// A 5 prime-extended form (long 5.8S) still aligns by sequence.
+const long58 = buildRrna5_8sLayout(("UACGGAU" + human5_8S).split(""));
+assert.deepEqual(pairCounts(long58), { normal: 20, wobble: 3 }, "5 prime-extended 5.8S keeps the template in register");
+
+// A 5 prime-truncated form aligns to the 3 prime part of the window.
+const truncated58 = buildRrna5_8sLayout(RRNA_5_8S_REFERENCE_SEQUENCE.slice(12).split(""));
+assert.equal(truncated58.nucleotides[0].positionLabel ?? null, null, "truncated form starts inside the window");
+assert.equal(truncated58.nucleotides[7].positionLabel, "20", "truncated 5.8S keeps canonical numbering");
+assert.deepEqual(pairCounts(truncated58), { normal: 20, wobble: 3 }, "truncated 5.8S keeps all template pairs");
+
+// Unrelated input falls back to the 3 prime alignment rule.
+const unrelated58 = buildRrna5_8sLayout("A".repeat(160).split(""));
+assert.equal(unrelated58.nucleotides[7].positionLabel, "1", "unrelated 160-nt input is 3 prime aligned (7 extra 5 prime positions)");
+assert.equal(unrelated58.stems.length, 23, "fallback alignment still draws every template pair");
+
+assert.ok(
+  mature58.recommendedCanvasWidth >= Math.max(...mature58.nucleotides.map((node) => node.x)) + 40,
+  "3 prime extension stays inside the recommended canvas width",
+);
+assert.ok(window58.recommendedCanvasWidth <= mature58.recommendedCanvasWidth, "canvas only widens for the 3 prime extension");
+
 console.log("structure layout tests passed");

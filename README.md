@@ -57,6 +57,14 @@ The 5S pairing is taken from a published reference and is not predicted by the t
 
 Template coordinates for the text themes are generated from that pairing. Sequences from other species are drawn on the same pairing; pairs that are not Watson-Crick or G·U for the pasted sequence are marked.
 
+## 5.8S rRNA Notes
+
+The 5.8S preset has 153 canonical positions. They correspond to human 5.8S rRNA, GenBank U13369.1 positions 6624-6776, which is the human entry in the Rfam RF00002 seed alignment. All 23 template pairs are Watson-Crick or G·U on that sequence.
+
+Input is aligned to that 153-nt reference by sequence identity, so extra bases at either end do not shift the template. The mature 157-nt human 5.8S maps with one extra 5′ base and three extra 3′ bases (CUU), drawn unpaired. A 5′-extended or 5′-truncated form keeps canonical numbering. When the input does not resemble the reference, the 3′ ends are aligned instead.
+
+The template's three helices (52-59 with 108-115, 61-69 with 80-88, 116-121 with 127-132) are one structure model. The Rfam RF00002 consensus (published structure, PMID 11125083) is a different model: it shares the 3′ hairpin and extends it to 113-121 with 127-135, but pairs 40-47, 65-67, 72-73 and 105-107 differently. The tool keeps the template model; it does not predict or choose between them.
+
 ## Modification Input
 
 The sequence parser recognizes both standard bases and modification tokens. Examples:
@@ -104,7 +112,7 @@ The 5S and 5.8S templates store coordinates tuned for plain text, which are too 
 | --- | --- |
 | ![Human 5S rRNA in the Bubble theme](docs/rrna-5s-bubble.svg) | ![Human 5.8S rRNA in the Bubble theme](docs/rrna-5_8s-bubble.svg) |
 
-Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction. The 5S template follows the Rfam RF00001 reference, so the human 5S figure has no open circles. The 5.8S template pairing has not been checked against a reference yet; its open circles mark pairs that do not fit the human sequence.
+Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction. The 5S template follows the Rfam RF00001 reference, so the human 5S figure has no open circles. The 5.8S figure is the mature 157-nt human sequence; all 23 template pairs are Watson-Crick or G·U on it.
 
 Older project JSON files using removed themes are normalized to `Publication` on import.
 
