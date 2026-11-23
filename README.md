@@ -89,6 +89,16 @@ G C G G A U U U A m2G C U C A G D D G G G A G A G C m22G C C A G A Cm U Gm A A y
 
 In the Bubble theme, unpaired bases that would overlap are nudged apart for display only; stored coordinates and paired bases keep their template positions.
 
+### Bubble theme on the rRNA presets
+
+The 5S and 5.8S templates store coordinates tuned for plain text, which are too tight for one circle per base. When the Bubble theme is active on these presets, the tool keeps the template's pairing map and re-arranges the coordinates from it: stacked pairs become ladders, each loop becomes a circle, and a long unpaired exterior (the 5.8S leader and tail) runs around an open ring. Switching back to `Publication` or `Light` restores the fixed template coordinates. Entering or leaving Bubble on an rRNA preset rebuilds the scaffold, so manual drags made in the other arrangement are not carried across.
+
+| 5S rRNA | 5.8S rRNA |
+| --- | --- |
+| ![Human 5S rRNA in the Bubble theme](docs/rrna-5s-bubble.svg) | ![Human 5.8S rRNA in the Bubble theme](docs/rrna-5_8s-bubble.svg) |
+
+Both figures are exports of public human reference sequences. Pair markers follow the sequence: a line is a Watson-Crick pair, a filled dot is G·U, and an open circle is a template pair that is neither for this sequence. The pairing itself comes from the fixed template and is not a structure prediction; many open circles mean the template pairing does not match that sequence well.
+
 Older project JSON files using removed themes are normalized to `Publication` on import.
 
 ## Run Locally
@@ -113,7 +123,7 @@ npm run start
 npm run test:structure
 ```
 
-The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, the fixed 5S rRNA template, and the Bubble theme geometry (no overlapping bubbles or labels on yeast tRNA-Phe).
+The structure test covers tRNA template mapping, modification parsing, dot-bracket pairing, the fixed 5S rRNA template, the Bubble theme geometry (no overlapping bubbles or labels on yeast tRNA-Phe), and the Bubble arrangement of the 5S and 5.8S presets (no overlaps, pairing unchanged).
 
 ## Export Figures
 

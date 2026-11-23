@@ -24,6 +24,8 @@ execFileSync(
     "src/lib/defaultProject.ts",
     "src/lib/validation.ts",
     "src/lib/bubbleStyle.ts",
+    "src/lib/radialLayout.ts",
+    "src/lib/rrna5_8s.ts",
     "--outDir",
     outDir,
     "--module",
@@ -961,5 +963,106 @@ assertNoBubbleOverlap(crowdedPositions, 10, "crowded loop");
 assert.deepEqual(crowdedPositions.get(1), { x: 100, y: 100 }, "paired base stays fixed while free bases move");
 assert.equal(crowded[1].x, 104, "input coordinates are not mutated");
 assert.ok(BUBBLE_GAP > 0, "bubbles keep a visible gap");
+
+
+// --- Bubble theme on fixed rRNA templates: structure-driven arrangement -----
+const { buildRrna5_8sLayout } = require(path.join(outDir, "rrna5_8s.js"));
+const {
+  RADIAL_PAIR_WIDTH,
+  RADIAL_SPACING,
+  arrangeNucleotidesRadially,
+  buildRadialLayout,
+} = require(path.join(outDir, "radialLayout.js"));
+
+// Public reference sequences (human 5S, 120 nt; human 5.8S, 157 nt).
+const human5S = "GUCUACGGCCAUACCACCCUGAACGCGCCCGAUCUCGUCUGAUCUCGGAAGCUAAGCAGGGUCGGGCCUGGUUAGUACUUGGAUGGGAGACCGCCUGGGAAUACCGGGUGCUGUAGGCUU";
+const human5_8S = "CGACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCUAGCUGCGAGAAUUAAUGUGAAUUGCAGGACACAUUGAUCAUCGACACUUCGAACGCACUUGCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCGCUU";
+assert.equal(human5S.length, 120, "human 5S reference is 120 nt");
+
+[
+  ["5S", buildRrna5SLayout(human5S.split(""))],
+  ["5.8S", buildRrna5_8sLayout(human5_8S.split(""))],
+].forEach(([name, layout]) => {
+  const arranged = arrangeNucleotidesRadially(layout.nucleotides, layout.stems, { width: 1280, height: 980 });
+  const nodes = arranged.nucleotides;
+  assert.equal(nodes.length, layout.nucleotides.length, `${name}: every nucleotide is arranged`);
+
+  const radius = getBubbleRadius(nodes, layout.stems);
+  assert.ok(radius >= 12, `${name}: arrangement leaves room for readable bubbles (radius ${radius})`);
+  for (let left = 0; left < nodes.length; left += 1) {
+    assert.ok(Number.isFinite(nodes[left].x) && Number.isFinite(nodes[left].y), `${name}: finite coordinates`);
+    assert.ok(nodes[left].x >= 0 && nodes[left].x <= arranged.canvasWidth, `${name}: x inside canvas`);
+    assert.ok(nodes[left].y >= 0 && nodes[left].y <= arranged.canvasHeight, `${name}: y inside canvas`);
+    for (let right = left + 1; right < nodes.length; right += 1) {
+      const distance = Math.hypot(nodes[left].x - nodes[right].x, nodes[left].y - nodes[right].y);
+      assert.ok(distance >= radius * 2, `${name}: bubbles ${nodes[left].pos} and ${nodes[right].pos} overlap`);
+    }
+  }
+
+  const byPos = new Map(nodes.map((node) => [node.pos, node]));
+  layout.stems.forEach((stem) => {
+    const a = byPos.get(stem.from);
+    const b = byPos.get(stem.to);
+    const width = Math.hypot(a.x - b.x, a.y - b.y);
+    assert.ok(Math.abs(width - RADIAL_PAIR_WIDTH) < 2, `${name}: pair ${stem.from}-${stem.to} keeps the pair width (${width.toFixed(1)})`);
+  });
+
+  const chain = [...nodes].sort((a, b) => (a.sequenceIndex ?? a.pos) - (b.sequenceIndex ?? b.pos));
+  chain.slice(0, -1).forEach((node, index) => {
+    const next = chain[index + 1];
+    const step = Math.hypot(node.x - next.x, node.y - next.y);
+    assert.ok(step <= RADIAL_SPACING * 2.4 + 2, `${name}: backbone step ${node.pos}->${next.pos} stays short (${step.toFixed(1)})`);
+  });
+
+  // The stored template is untouched and the function is deterministic.
+  const again = arrangeNucleotidesRadially(layout.nucleotides, layout.stems, { width: 1280, height: 980 });
+  assert.deepEqual(
+    again.nucleotides.map((node) => [node.x, node.y]),
+    nodes.map((node) => [node.x, node.y]),
+    `${name}: arrangement is deterministic`,
+  );
+});
+
+assert.equal(buildRadialLayout([{ pos: 1, base: "A", x: 0, y: 0 }], []), null, "no pairs means no radial arrangement");
+
+// Theme decides which coordinates an rRNA template gets.
+const rrna5sBase = { ...createDefaultProject(), sequence: human5S.split("") };
+const rrna5sPublication = remapProjectToTemplate(
+  { ...rrna5sBase, settings: { ...rrna5sBase.settings, theme: "publication" } },
+  rrna5sTemplate,
+);
+const rrna5sBubble = remapProjectToTemplate(
+  { ...rrna5sBase, settings: { ...rrna5sBase.settings, theme: "bubble" } },
+  rrna5sTemplate,
+);
+assert.deepEqual(
+  rrna5sPublication.nucleotides.map((node) => [node.x, node.y]),
+  RRNA_5S_TEMPLATE_ROWS.map((row) => [row.x, row.y]),
+  "Publication theme keeps the fixed 5S template coordinates",
+);
+assert.notDeepEqual(
+  rrna5sBubble.nucleotides.map((node) => [node.x, node.y]),
+  rrna5sPublication.nucleotides.map((node) => [node.x, node.y]),
+  "Bubble theme re-arranges the 5S template",
+);
+assert.deepEqual(rrna5sBubble.stems, rrna5sPublication.stems, "Bubble theme never changes the template pairing");
+const rrna5sBubbleEdited = syncProjectToSequence(rrna5sBubble, human5S.split(""), rrna5sTemplate);
+assert.deepEqual(
+  rrna5sBubbleEdited.nucleotides.map((node) => [node.x, node.y]),
+  rrna5sBubble.nucleotides.map((node) => [node.x, node.y]),
+  "editing the sequence in the Bubble theme keeps the bubble arrangement",
+);
+
+
+// Switching rRNA preset and then changing the sequence must not leave stale tick labels.
+const rrna58Template = getTemplateById("rrna_5_8s_secondary_structure", BUILTIN_TEMPLATES);
+const from5sTo58 = remapProjectToTemplate(rrna5sBubble, rrna58Template);
+const resized58 = syncProjectToSequence(from5sTo58, human5_8S.split(""), rrna58Template);
+const fresh58 = buildRrna5_8sLayout(human5_8S.split(""));
+assert.deepEqual(
+  resized58.nucleotides.map((node) => node.positionLabel ?? null),
+  fresh58.nucleotides.map((node) => node.positionLabel ?? null),
+  "5.8S tick labels come from the template after a length change",
+);
 
 console.log("structure layout tests passed");

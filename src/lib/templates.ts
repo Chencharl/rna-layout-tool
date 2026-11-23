@@ -4,6 +4,7 @@ import {
 import { getRenderableBase } from "./annotations";
 import { buildRrna5SLayout, RRNA_5S_TEMPLATE_ROWS } from "./rrna5s";
 import { buildRrna5_8sLayout, RRNA_5_8S_CANONICAL_LENGTH } from "./rrna5_8s";
+import { arrangeNucleotidesRadially } from "./radialLayout";
 import { buildSprinzlTRnaLayout } from "./sprinzl";
 import type { RnaNucleotide, RnaProject, RnaStem, RnaTemplate } from "./types";
 
@@ -408,6 +409,31 @@ function preservePositionLabels(
   });
 }
 
+/**
+ * rRNA templates carry coordinates tuned for plain text. In the Bubble theme the
+ * same template pairs are re-arranged as ladders and circular loops so that one
+ * circle per base fits without overlaps.
+ */
+function arrangeRrnaForTheme<T extends RnaNucleotide>(
+  nucleotides: T[],
+  stems: RnaStem[],
+  settings: RnaProject["settings"],
+): { nucleotides: T[]; settings: RnaProject["settings"] } {
+  if (settings.theme !== "bubble") {
+    return { nucleotides, settings };
+  }
+
+  const arranged = arrangeNucleotidesRadially(nucleotides, stems, {
+    width: settings.canvasWidth,
+    height: settings.canvasHeight,
+  });
+
+  return {
+    nucleotides: arranged.nucleotides,
+    settings: { ...settings, canvasWidth: arranged.canvasWidth, canvasHeight: arranged.canvasHeight },
+  };
+}
+
 export function remapProjectToTemplate(
   project: RnaProject,
   template: RnaTemplate,
@@ -440,40 +466,43 @@ export function remapProjectToTemplate(
   if (template.id === "rrna_5s_secondary_structure") {
     const layout = buildRrna5SLayout(project.sequence);
     const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+    const arranged = arrangeRrnaForTheme(layout.nucleotides, layout.stems, project.settings);
 
     return {
       ...project,
       moleculeType: "rRNA",
       numberingMode: template.numberingMode ?? project.numberingMode,
       templateId: template.id,
-      nucleotides: layout.nucleotides,
+      nucleotides: arranged.nucleotides,
       stems: layout.stems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
       renderMode: "rrna_5s_template",
       unassignedExtraBases: [],
+      settings: arranged.settings,
     };
   }
 
   if (template.id === "rrna_5_8s_secondary_structure") {
     const layout = buildRrna5_8sLayout(project.sequence);
     const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, layout.nucleotides);
+    const arranged = arrangeRrnaForTheme(layout.nucleotides, layout.stems, {
+      ...project.settings,
+      canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+    });
 
     return {
       ...project,
       moleculeType: "rRNA",
       numberingMode: template.numberingMode ?? project.numberingMode,
       templateId: template.id,
-      nucleotides: layout.nucleotides,
+      nucleotides: arranged.nucleotides,
       stems: layout.stems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
       renderMode: "rrna_5_8s_template",
       unassignedExtraBases: [],
-      settings: {
-        ...project.settings,
-        canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
-      },
+      settings: arranged.settings,
     };
   }
 
@@ -541,39 +570,54 @@ export function syncProjectToSequence(
 
   if (template.id === "rrna_5s_secondary_structure") {
     const layout = buildRrna5SLayout(nextSequence);
-    const labeledNodes = preservePositionLabels(layout.nucleotides, project.nucleotides);
+    // Template tick labels follow the template alignment, so manual labels are only
+    // carried over when the previous layout had the same template and length.
+    const previousNodes =
+      project.templateId === template.id && project.sequence.length === nextSequence.length
+        ? project.nucleotides
+        : [];
+    const labeledNodes = preservePositionLabels(layout.nucleotides, previousNodes);
     const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, labeledNodes);
+    const arranged = arrangeRrnaForTheme(labeledNodes, layout.stems, project.settings);
 
     return {
       ...project,
       sequence: nextSequence,
-      nucleotides: labeledNodes,
+      nucleotides: arranged.nucleotides,
       stems: layout.stems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
       renderMode: "rrna_5s_template",
       unassignedExtraBases: [],
+      settings: arranged.settings,
     };
   }
 
   if (template.id === "rrna_5_8s_secondary_structure") {
     const layout = buildRrna5_8sLayout(nextSequence);
-    const labeledNodes = preservePositionLabels(layout.nucleotides, project.nucleotides);
+    // Template tick labels follow the template alignment, so manual labels are only
+    // carried over when the previous layout had the same template and length.
+    const previousNodes =
+      project.templateId === template.id && project.sequence.length === nextSequence.length
+        ? project.nucleotides
+        : [];
+    const labeledNodes = preservePositionLabels(layout.nucleotides, previousNodes);
     const preservedLabels = filterCurrentAnnotationsForNodes(project.labels, labeledNodes);
+    const arranged = arrangeRrnaForTheme(labeledNodes, layout.stems, {
+      ...project.settings,
+      canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
+    });
 
     return {
       ...project,
       sequence: nextSequence,
-      nucleotides: labeledNodes,
+      nucleotides: arranged.nucleotides,
       stems: layout.stems,
       labels: preservedLabels,
       mappingWarnings: layout.warnings,
       renderMode: "rrna_5_8s_template",
       unassignedExtraBases: [],
-      settings: {
-        ...project.settings,
-        canvasHeight: Math.max(project.settings.canvasHeight, layout.recommendedCanvasHeight),
-      },
+      settings: arranged.settings,
     };
   }
 

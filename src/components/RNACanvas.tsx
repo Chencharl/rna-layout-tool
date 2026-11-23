@@ -318,6 +318,8 @@ export function RNACanvas({
   const isConventionalTRna =
     project.moleculeType === "tRNA" && project.templateId === "trna_classic";
   const isFiveSRrna = project.templateId === "rrna_5s_secondary_structure";
+  const isRrnaTemplate =
+    isFiveSRrna || project.templateId === "rrna_5_8s_secondary_structure";
   const sequenceOrderedNucleotides = [...canvasNucleotides]
     .filter((nucleotide) => nucleotide.sequenceIndex !== undefined)
     .sort(
@@ -401,6 +403,9 @@ export function RNACanvas({
         );
       } else if (project.settings.showPositionNumbers && positionText) {
         bubbleLabelText.set(nucleotide.pos, positionText);
+      } else if (isRrnaTemplate && nucleotide.positionLabel) {
+        // rRNA templates label every tenth position; keep those ticks in bubble figures.
+        bubbleLabelText.set(nucleotide.pos, nucleotide.positionLabel);
       }
     });
   }
@@ -655,15 +660,18 @@ export function RNACanvas({
                   onRemoveStem(stem);
                 };
 
-                if (stem.pairStatus === "wobble") {
-                  // G·U pairs are drawn as a dot between the two bubbles.
+                if (stem.pairStatus === "wobble" || stem.pairStatus === "custom") {
+                  // G·U pairs are a filled dot; other non-Watson-Crick template pairs an open circle.
+                  const isWobble = stem.pairStatus === "wobble";
                   return (
                     <circle
                       key={`${stem.from}-${stem.to}`}
                       cx={(from.x + to.x) / 2}
                       cy={(from.y + to.y) / 2}
-                      r="2.8"
-                      fill={theme.accent}
+                      r={isWobble ? "2.8" : "3.2"}
+                      fill={isWobble ? theme.accent : theme.background}
+                      stroke={theme.accent}
+                      strokeWidth={isWobble ? "0" : "1.4"}
                       pointerEvents={mode === "edit-bonds" ? "visible" : "none"}
                       onContextMenu={removeStem}
                     />
